@@ -1,0 +1,10 @@
+{
+  "name": "EasyLib",
+  "description": "Plataforma gamificada EasyLib com design em cores quentes dedicada ao aprendizado de LIBRAS (Língua Brasileira de Sinais), com trilhas de aprendizagem, estúdio de câmera em tela cheia para visualização e prática do corpo e sinais, sinalário visual, 5 parâmetros fonológicos e desafios interativos.",
+  "requestFramePermissions": [
+    "camera"
+  ],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
