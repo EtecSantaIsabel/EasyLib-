@@ -1,6 +1,20 @@
-import React, { useState, useRef } from 'react';
-import { Play, Pause, RotateCcw, Video, Eye, Sparkles, Volume2, Info, ChevronRight, Gauge } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  Play,
+  Pause,
+  RotateCcw,
+  Video,
+  Gauge,
+  ExternalLink,
+  Upload,
+  CheckCircle2,
+  AlertTriangle,
+  Compass,
+  Hand,
+  Smile
+} from 'lucide-react';
 import { SignData } from '../types';
+import { LIBRAS_SIGN_DATABASE } from '../data/librasSignDatabase';
 import { soundService } from '../services/soundService';
 
 interface SignDemonstrationVisualProps {
@@ -14,14 +28,29 @@ interface SignDemonstrationVisualProps {
 export const SignDemonstrationVisual: React.FC<SignDemonstrationVisualProps> = ({
   sign,
   customVideoUrl,
-  customImageUrl,
   autoPlay = true,
   className = ''
 }) => {
-  const [isPlaying, setIsPlaying] = useState(true);
+  const [activeTab, setActiveTab] = useState<'demo' | 'params' | 'sources'>('demo');
+  const [isPlaying, setIsPlaying] = useState(false);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1);
-  const [viewMode, setViewMode] = useState<'video' | 'anatomy'>('video');
-  const [currentStep, setCurrentStep] = useState<number>(0);
+  const [selectedStepIndex, setSelectedStepIndex] = useState<number>(0);
+  const [uploadedVideoUrl, setUploadedVideoUrl] = useState<string | null>(null);
+  const videoElementRef = useRef<HTMLVideoElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setSelectedStepIndex(0);
+    setPlaybackSpeed(1);
+  }, [sign?.id]);
+
+  useEffect(() => {
+    return () => {
+      if (uploadedVideoUrl) {
+        URL.revokeObjectURL(uploadedVideoUrl);
+      }
+    };
+  }, [uploadedVideoUrl]);
 
   if (!sign) {
     return (
@@ -32,200 +61,412 @@ export const SignDemonstrationVisual: React.FC<SignDemonstrationVisualProps> = (
     );
   }
 
-  // Demonstration breakdown steps
-  const steps = [
-    { label: '1. Configuração de Mão (CM)', desc: sign.handshapeName },
-    { label: '2. Ponto de Articulação (PA)', desc: sign.bodyLocation },
-    { label: '3. Movimento (M)', desc: sign.movementType },
-    { label: '4. Expressão Facial (NMF)', desc: sign.facialExpression }
+  // Match structured linguistic spec when available
+  const cleanId = sign.id.replace(/^sign_/, '');
+  const structuredSpec = LIBRAS_SIGN_DATABASE.find(
+    (s) =>
+      s.id === cleanId ||
+      s.id === sign.id ||
+      s.name.toLowerCase() === sign.name.toLowerCase()
+  );
+
+  // Only play a video if a genuine sign-specific video or user-loaded clip exists
+  const activeVideoUrl = uploadedVideoUrl || customVideoUrl || sign.realVideoUrl || null;
+  const externalVideoRefUrl =
+    sign.videoReferenceUrl ||
+    structuredSpec?.videoReference?.externalUrl ||
+    `https://www.spreadthesign.com/pt.br/search/?q=${encodeURIComponent(sign.name.split('/')[0].trim())}`;
+  const externalSourceName =
+    sign.linguisticSourceName ||
+    structuredSpec?.linguisticSource?.name ||
+    'Spread the Sign (PT-BR) / SignBank UFSC';
+  const externalSourceUrl =
+    sign.linguisticSourceUrl ||
+    structuredSpec?.linguisticSource?.url ||
+    'https://signbank.libras.ufsc.br/';
+
+  const isValidated =
+    (sign.validationStatus || structuredSpec?.validationStatus) === 'validated';
+
+  const executionSteps = [
+    {
+      title: '1. Configuração de Mão (CM)',
+      desc: structuredSpec?.handshapeName || sign.handshapeName,
+      badge: 'Mão'
+    },
+    {
+      title: '2. Ponto de Articulação (PA)',
+      desc: structuredSpec?.articulationLocationLabel || sign.bodyLocation,
+      badge: 'Local'
+    },
+    {
+      title: '3. Orientação & Movimento (O / M)',
+      desc: structuredSpec
+        ? `${structuredSpec.palmOrientationLabel}. ${structuredSpec.trajectoryDescription}`
+        : sign.movementType,
+      badge: 'Trajetória'
+    },
+    {
+      title: '4. Expressão Não-Manual (NMF)',
+      desc: structuredSpec?.facialExpressionLabel || sign.facialExpression,
+      badge: 'Rosto'
+    }
   ];
 
   const handleTogglePlay = () => {
     soundService.playTap();
-    setIsPlaying(!isPlaying);
+    if (!videoElementRef.current) return;
+    if (videoElementRef.current.paused) {
+      videoElementRef.current.play();
+      setIsPlaying(true);
+    } else {
+      videoElementRef.current.pause();
+      setIsPlaying(false);
+    }
   };
 
-  const handleToggleSpeed = () => {
+  const handleSelectSpeed = (speed: number) => {
     soundService.playTap();
-    setPlaybackSpeed(prev => (prev === 1 ? 0.5 : prev === 0.5 ? 0.25 : 1));
+    setPlaybackSpeed(speed);
+    if (videoElementRef.current) {
+      videoElementRef.current.playbackRate = speed;
+    }
+  };
+
+  const handleReplay = () => {
+    soundService.playTap();
+    if (videoElementRef.current) {
+      videoElementRef.current.currentTime = 0;
+      videoElementRef.current.playbackRate = playbackSpeed;
+      videoElementRef.current.play();
+      setIsPlaying(true);
+    } else {
+      // Cycle step-by-step trajectory highlight
+      setSelectedStepIndex((prev) => (prev + 1) % executionSteps.length);
+    }
+  };
+
+  const handleUploadLocalVideo = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (uploadedVideoUrl) URL.revokeObjectURL(uploadedVideoUrl);
+    const objectUrl = URL.createObjectURL(file);
+    setUploadedVideoUrl(objectUrl);
+    setIsPlaying(true);
   };
 
   return (
-    <div className={`flex flex-col bg-white rounded-3xl border-2 border-[#F1EAE2] border-b-6 border-[#FED7AA] overflow-hidden shadow-sm ${className}`}>
-      
-      {/* Top Header Controls */}
-      <div className="bg-[#FFF7ED] px-4 py-2.5 border-b border-[#FED7AA] flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <span className="w-7 h-7 rounded-xl bg-[#FFEDD5] text-[#EA580C] flex items-center justify-center text-sm font-black border border-[#FDBA74]">
-            🤟
+    <div
+      className={`flex flex-col bg-white rounded-3xl border-2 border-[#F1EAE2] border-b-6 border-[#FED7AA] overflow-hidden shadow-sm ${className}`}
+    >
+      {/* Header */}
+      <div className="bg-[#FFF7ED] px-4 py-3 border-b border-[#FED7AA] flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2.5">
+          <span className="w-9 h-9 rounded-xl bg-[#FF6B00] text-white flex items-center justify-center text-base font-black shadow-xs">
+            {sign.visualGlyph || '🤟'}
           </span>
           <div>
-            <h4 className="font-black text-xs text-[#292524]">{sign.name}</h4>
-            <span className="text-[10px] font-bold text-[#EA580C] uppercase tracking-wider">{sign.category}</span>
+            <h4 className="font-black text-sm text-[#292524] flex flex-wrap items-center gap-1.5">
+              <span>{sign.name}</span>
+              {isValidated ? (
+                <span className="inline-flex items-center gap-1 text-[10px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full border border-emerald-300">
+                  <CheckCircle2 className="w-3 h-3" />
+                  VALIDADO
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1 text-[10px] font-black bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full border border-amber-300">
+                  <AlertTriangle className="w-3 h-3" />
+                  REVISÃO LINGUÍSTICA
+                </span>
+              )}
+            </h4>
+            <span className="text-[11px] font-bold text-[#EA580C] uppercase tracking-wider">
+              {sign.category}
+            </span>
           </div>
         </div>
 
-        {/* View Mode Toggle: Video / Anatomia dos 5 Parâmetros */}
-        <div className="flex items-center bg-[#FED7AA]/60 p-1 rounded-xl gap-1 text-[11px] font-black">
+        {/* Tabs */}
+        <div className="flex items-center bg-[#FED7AA]/50 p-1 rounded-xl gap-1 text-[11px] font-black">
           <button
-            onClick={() => { soundService.playTap(); setViewMode('video'); }}
-            className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${viewMode === 'video' ? 'bg-white text-[#C2410C] shadow-xs' : 'text-[#78716C]'}`}
+            onClick={() => {
+              soundService.playTap();
+              setActiveTab('demo');
+            }}
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg transition-all cursor-pointer ${
+              activeTab === 'demo'
+                ? 'bg-[#FF6B00] text-white shadow-xs'
+                : 'text-[#78716C] hover:text-[#292524]'
+            }`}
           >
-            Vídeo
+            <Video className="w-3.5 h-3.5" />
+            <span>Demonstração</span>
           </button>
+
           <button
-            onClick={() => { soundService.playTap(); setViewMode('anatomy'); }}
-            className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${viewMode === 'anatomy' ? 'bg-white text-[#C2410C] shadow-xs' : 'text-[#78716C]'}`}
+            onClick={() => {
+              soundService.playTap();
+              setActiveTab('params');
+            }}
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg transition-all cursor-pointer ${
+              activeTab === 'params'
+                ? 'bg-[#FF6B00] text-white shadow-xs'
+                : 'text-[#78716C] hover:text-[#292524]'
+            }`}
           >
-            Parâmetros
+            <Compass className="w-3.5 h-3.5" />
+            <span>5 Parâmetros</span>
+          </button>
+
+          <button
+            onClick={() => {
+              soundService.playTap();
+              setActiveTab('sources');
+            }}
+            className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg transition-all cursor-pointer ${
+              activeTab === 'sources'
+                ? 'bg-[#FF6B00] text-white shadow-xs'
+                : 'text-[#78716C] hover:text-[#292524]'
+            }`}
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+            <span>Referência</span>
           </button>
         </div>
       </div>
 
-      {/* Main Visual Display Stage */}
-      {viewMode === 'video' ? (
-        <div className="relative aspect-video sm:aspect-[16/10] bg-gradient-to-b from-[#1C1917] via-[#292524] to-[#0C0A09] flex items-center justify-center overflow-hidden group">
-          
-          {/* Visual Signer Animation Demonstration Stage */}
-          <div className="relative w-full h-full flex flex-col items-center justify-center p-4">
-            
-            {/* Background Grid Accent */}
-            <div className="absolute inset-0 bg-[radial-gradient(#EA580C_1px,transparent_1px)] [background-size:20px_20px] opacity-15" />
+      {/* TAB 1: DEMONSTRATION (Real sign-specific video if available, otherwise honest structured steps + verified video links) */}
+      {activeTab === 'demo' && (
+        <div className="bg-[#FFFDF9]">
+          {activeVideoUrl ? (
+            <div className="relative aspect-video bg-stone-950 flex items-center justify-center overflow-hidden">
+              <video
+                ref={videoElementRef}
+                src={activeVideoUrl}
+                autoPlay={autoPlay}
+                loop
+                muted
+                playsInline
+                onPlay={() => setIsPlaying(true)}
+                onPause={() => setIsPlaying(false)}
+                className="w-full h-full object-contain"
+              />
 
-            {/* Visual Signer SVG / Animated Graphic */}
-            <div className={`relative flex flex-col items-center transition-transform duration-700 ${isPlaying ? 'scale-105' : 'scale-100'}`}>
-              
-              {/* Dynamic Sign Demonstration Avatar */}
-              <div className="relative w-36 h-36 sm:w-44 sm:h-44 flex items-center justify-center">
-                
-                {/* Glow ring */}
-                <div className={`absolute inset-0 rounded-full bg-[#FF6B00]/20 blur-xl ${isPlaying ? 'animate-pulse' : ''}`} />
+              <div className="absolute bottom-2 inset-x-2 sm:inset-x-3 p-2 rounded-2xl bg-black/85 backdrop-blur-md border border-white/15 flex flex-wrap items-center justify-between gap-2 text-white text-xs z-20">
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={handleTogglePlay}
+                    className="p-1.5 rounded-xl bg-[#FF6B00] hover:bg-[#EA580C] text-white cursor-pointer"
+                    title={isPlaying ? 'Pausar' : 'Reproduzir'}
+                  >
+                    {isPlaying ? (
+                      <Pause className="w-4 h-4 fill-current" />
+                    ) : (
+                      <Play className="w-4 h-4 fill-current" />
+                    )}
+                  </button>
 
-                {/* Animated Graphic Canvas */}
-                <svg viewBox="0 0 160 160" className="w-full h-full drop-shadow-2xl">
-                  {/* Signer Torso */}
-                  <path d="M 40 140 C 44 110, 56 102, 80 102 C 104 102, 116 110, 120 140 Z" fill="#334155" />
-                  
-                  {/* Head */}
-                  <ellipse cx="80" cy="65" rx="22" ry="24" fill="#FBBF24" />
-                  
-                  {/* Hair */}
-                  <path d="M 58 56 C 58 38, 102 38, 102 56 C 102 44, 92 36, 80 36 C 68 36, 58 44, 58 56 Z" fill="#1E293B" />
-                  
-                  {/* Dynamic Non-Manual Facial Expression (NMF) */}
-                  {sign.facialExpression.toLowerCase().includes('pergunta') || sign.facialExpression.toLowerCase().includes('interrogativa') ? (
-                    <g>
-                      {/* Eyebrows raised for questions */}
-                      <path d="M 66 50 Q 72 45 78 50" stroke="#0F172A" strokeWidth="2.5" strokeLinecap="round" fill="none" />
-                      <path d="M 82 50 Q 88 45 94 50" stroke="#0F172A" strokeWidth="2.5" strokeLinecap="round" fill="none" />
-                      <circle cx="72" cy="60" r="3.5" fill="#0F172A" />
-                      <circle cx="88" cy="60" r="3.5" fill="#0F172A" />
-                      <path d="M 76 74 Q 80 78 84 74" stroke="#0F172A" strokeWidth="2" strokeLinecap="round" fill="none" />
-                    </g>
-                  ) : sign.facialExpression.toLowerCase().includes('dúvida') || sign.facialExpression.toLowerCase().includes('franzida') ? (
-                    <g>
-                      {/* Eyebrows furrowed for WH-questions */}
-                      <path d="M 68 52 L 78 55" stroke="#0F172A" strokeWidth="2.5" strokeLinecap="round" />
-                      <path d="M 92 52 L 82 55" stroke="#0F172A" strokeWidth="2.5" strokeLinecap="round" />
-                      <circle cx="72" cy="60" r="3" fill="#0F172A" />
-                      <circle cx="88" cy="60" r="3" fill="#0F172A" />
-                      <path d="M 76 74 L 84 74" stroke="#0F172A" strokeWidth="2" strokeLinecap="round" />
-                    </g>
-                  ) : (
-                    <g>
-                      {/* Friendly Smile */}
-                      <path d="M 66 52 Q 72 49 76 52" stroke="#0F172A" strokeWidth="2" strokeLinecap="round" fill="none" />
-                      <path d="M 84 52 Q 88 49 94 52" stroke="#0F172A" strokeWidth="2" strokeLinecap="round" fill="none" />
-                      <circle cx="72" cy="60" r="3" fill="#0F172A" />
-                      <circle cx="88" cy="60" r="3" fill="#0F172A" />
-                      <path d="M 74 72 Q 80 79 86 72" stroke="#0F172A" strokeWidth="2.5" strokeLinecap="round" fill="none" />
-                    </g>
-                  )}
+                  <button
+                    onClick={handleReplay}
+                    className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white cursor-pointer"
+                    title="Repetir"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                  </button>
+                </div>
 
-                  {/* Sign Movement Arc Trails */}
-                  {isPlaying && (
-                    <path
-                      d="M 40 85 C 40 50, 120 50, 120 85"
-                      stroke="#FF6B00"
-                      strokeWidth="3"
-                      strokeDasharray="6 4"
-                      fill="none"
-                      className="animate-pulse"
-                    />
-                  )}
+                {/* Speed selectors 1x / 0.5x / 0.25x */}
+                <div className="flex items-center gap-1">
+                  <Gauge className="w-3.5 h-3.5 text-amber-400 mr-0.5" />
+                  {[1, 0.5, 0.25].map((spd) => (
+                    <button
+                      key={spd}
+                      onClick={() => handleSelectSpeed(spd)}
+                      className={`px-2 py-1 rounded-lg text-[11px] font-black cursor-pointer ${
+                        playbackSpeed === spd
+                          ? 'bg-[#FF6B00] text-white'
+                          : 'bg-white/10 text-stone-200 hover:bg-white/20'
+                      }`}
+                    >
+                      {spd}x
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="p-4 space-y-3.5">
+              {/* Honest media notice */}
+              <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 flex items-start justify-between gap-3">
+                <div className="space-y-0.5">
+                  <p className="text-[11px] font-black text-amber-900 uppercase tracking-wide">
+                    Guia Técnico de Execução + Vídeo Oficial Externo
+                  </p>
+                  <p className="text-[11px] text-amber-800 leading-snug">
+                    Este módulo não exibe fotos genéricas ou vídeos aleatórios. Consulte a execução linguística abaixo ou abra o vídeo real de um sinalizador no dicionário oficial.
+                  </p>
+                </div>
+                <span className="text-3xl shrink-0">{sign.visualGlyph}</span>
+              </div>
 
-                  {/* Active Hands Signing */}
-                  <g className={isPlaying ? 'animate-bounce' : ''}>
-                    {/* Hand 1 */}
-                    <circle cx="56" cy="95" r="11" fill="#FBBF24" stroke="#D97706" strokeWidth="2" />
-                    {/* Hand 2 */}
-                    <circle cx="104" cy="95" r="11" fill="#FBBF24" stroke="#D97706" strokeWidth="2" />
-                  </g>
-                </svg>
+              {/* Step-by-step interactive movement breakdown */}
+              <div className="p-3.5 rounded-2xl bg-white border-2 border-[#FED7AA] space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black uppercase tracking-wider text-[#EA580C]">
+                    Etapa {selectedStepIndex + 1} de {executionSteps.length} •{' '}
+                    {executionSteps[selectedStepIndex].badge}
+                  </span>
+                  <button
+                    onClick={handleReplay}
+                    className="inline-flex items-center gap-1 text-[11px] font-black text-[#EA580C] hover:underline cursor-pointer"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Próxima etapa</span>
+                  </button>
+                </div>
 
-                {/* Big Visual Sign Glyph Overlay */}
-                <div className="absolute -bottom-2 -right-2 w-12 h-12 rounded-2xl bg-[#FF6B00] border-2 border-white text-white flex items-center justify-center text-2xl shadow-xl animate-bounce">
-                  {sign.visualGlyph || '🤟'}
+                <h5 className="font-black text-sm text-[#292524]">
+                  {executionSteps[selectedStepIndex].title}
+                </h5>
+                <p className="text-xs text-[#57534E] font-medium leading-relaxed">
+                  {executionSteps[selectedStepIndex].desc}
+                </p>
+
+                <div className="grid grid-cols-4 gap-1.5 pt-1">
+                  {executionSteps.map((st, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => {
+                        soundService.playTap();
+                        setSelectedStepIndex(idx);
+                      }}
+                      className={`py-1.5 px-2 rounded-xl text-[10px] font-black border transition-all cursor-pointer truncate ${
+                        selectedStepIndex === idx
+                          ? 'bg-[#FF6B00] text-white border-[#C2410C]'
+                          : 'bg-[#FFF7ED] text-[#78716C] border-[#FED7AA] hover:text-[#292524]'
+                      }`}
+                    >
+                      {idx + 1}. {st.badge}
+                    </button>
+                  ))}
                 </div>
               </div>
 
-              {/* Subtitle / Meaning Gloss */}
-              <div className="mt-2 px-3 py-1 rounded-full bg-black/60 backdrop-blur-md border border-white/20 text-white font-mono text-xs font-bold">
-                {sign.name.toUpperCase()}
+              {/* Action links: Open real dictionary video + optional local clip upload for slow-motion study */}
+              <div className="flex flex-wrap items-center gap-2">
+                <a
+                  href={externalVideoRefUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex-1 min-w-[180px] inline-flex items-center justify-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-[#FF6B00] hover:bg-[#EA580C] text-white font-black text-xs shadow-xs transition-all"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                  <span>Ver sinal real no Spread the Sign</span>
+                </a>
+
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="inline-flex items-center gap-1.5 px-3 py-2.5 rounded-xl bg-white hover:bg-[#FFF7ED] text-[#292524] border border-[#FED7AA] font-black text-xs cursor-pointer"
+                  title="Carregar vídeo .mp4/.webm para estudar em câmera lenta (0.5x / 0.25x)"
+                >
+                  <Upload className="w-3.5 h-3.5 text-[#EA580C]" />
+                  <span>Carregar clipe (0.25x)</span>
+                </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="video/mp4,video/webm,video/*"
+                  onChange={handleUploadLocalVideo}
+                  className="hidden"
+                />
               </div>
-
             </div>
-
-          </div>
-
-          {/* Video Controls Bar Floating on Bottom */}
-          <div className="absolute bottom-2 inset-x-2 sm:inset-x-4 p-2 rounded-2xl bg-black/75 backdrop-blur-md border border-white/10 flex items-center justify-between text-white text-xs">
-            <div className="flex items-center gap-2">
-              <button
-                onClick={handleTogglePlay}
-                className="p-1.5 rounded-xl bg-[#FF6B00] hover:bg-[#EA580C] text-white cursor-pointer transition-all active:scale-95 shadow-sm"
-                title={isPlaying ? 'Pausar' : 'Reproduzir'}
-              >
-                {isPlaying ? <Pause className="w-4 h-4 fill-current" /> : <Play className="w-4 h-4 fill-current" />}
-              </button>
-
-              <button
-                onClick={handleToggleSpeed}
-                className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-white/10 hover:bg-white/20 font-black text-[11px] cursor-pointer"
-                title="Velocidade de reprodução do sinal"
-              >
-                <Gauge className="w-3.5 h-3.5 text-amber-400" />
-                <span>{playbackSpeed}x {playbackSpeed < 1 ? '(Câmera Lenta)' : ''}</span>
-              </button>
-            </div>
-
-            {/* Non-manual marker pill */}
-            <div className="text-[10px] text-amber-300 font-bold hidden sm:flex items-center gap-1">
-              <span>🎭 {sign.facialExpression}</span>
-            </div>
-          </div>
-
+          )}
         </div>
-      ) : (
-        /* Anatomia dos 5 Parâmetros da Libras */
-        <div className="p-4 space-y-3 bg-[#FFFDF9]">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            {steps.map((step, idx) => (
-              <div key={idx} className="p-3 rounded-2xl bg-[#FFF7ED] border border-[#FED7AA] space-y-1">
-                <div className="text-[11px] font-black text-[#EA580C] uppercase tracking-wider">{step.label}</div>
+      )}
+
+      {/* TAB 2: 5 PARAMETERS */}
+      {activeTab === 'params' && (
+        <div className="p-4 space-y-2.5 bg-[#FFFDF9]">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {executionSteps.map((step, idx) => (
+              <div
+                key={idx}
+                className="p-3 rounded-2xl bg-[#FFF7ED] border border-[#FED7AA] space-y-1"
+              >
+                <div className="text-[11px] font-black text-[#EA580C] uppercase tracking-wider flex items-center gap-1">
+                  {idx === 0 && <Hand className="w-3 h-3" />}
+                  {idx === 3 && <Smile className="w-3 h-3" />}
+                  <span>{step.title}</span>
+                </div>
                 <div className="text-xs font-bold text-[#292524]">{step.desc}</div>
               </div>
             ))}
           </div>
 
-          {/* Description Guide */}
-          <div className="p-3 rounded-2xl bg-white border border-[#F1EAE2] text-xs text-[#78716C] leading-relaxed">
-            <span className="font-black text-[#292524]">Como executar: </span>
-            {sign.description}
-          </div>
+          {structuredSpec && (
+            <div className="p-3 rounded-2xl bg-white border border-[#F1EAE2] text-xs text-[#57534E] space-y-1">
+              <div>
+                <span className="font-black text-[#292524]">Posição inicial → final: </span>
+                {structuredSpec.initialPosition} → {structuredSpec.finalPosition}
+              </div>
+              <div>
+                <span className="font-black text-[#292524]">Mãos: </span>
+                {structuredSpec.twoHanded === 2
+                  ? 'Duas mãos'
+                  : structuredSpec.twoHanded === '1_or_2'
+                  ? 'Uma ou duas mãos'
+                  : 'Uma mão dominante'}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
+      {/* TAB 3: VERIFIABLE ACADEMIC & DICTIONARY SOURCES */}
+      {activeTab === 'sources' && (
+        <div className="p-4 space-y-3 bg-[#FFFDF9] text-xs">
+          <div className="p-3.5 rounded-2xl bg-white border border-[#FED7AA] space-y-2">
+            <div className="font-black text-[#292524]">Fonte linguística de referência</div>
+            <p className="text-[#57534E]">{externalSourceName}</p>
+            <div className="flex flex-wrap gap-2 pt-1">
+              <a
+                href={externalSourceUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[#FFF7ED] border border-[#FED7AA] text-[#EA580C] font-black hover:bg-[#FFEDD5]"
+              >
+                <ExternalLink className="w-3 h-3" />
+                <span>Abrir fonte linguística</span>
+              </a>
+              <a
+                href="https://signbank.libras.ufsc.br/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[#FFF7ED] border border-[#FED7AA] text-[#EA580C] font-black hover:bg-[#FFEDD5]"
+              >
+                <ExternalLink className="w-3 h-3" />
+                <span>SignBank UFSC</span>
+              </a>
+              <a
+                href="https://www.ines.gov.br/dicionario-de-libras/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 px-3 py-1.5 rounded-xl bg-[#FFF7ED] border border-[#FED7AA] text-[#EA580C] font-black hover:bg-[#FFEDD5]"
+              >
+                <ExternalLink className="w-3 h-3" />
+                <span>Dicionário INES</span>
+              </a>
+            </div>
+          </div>
+          {structuredSpec?.validationNotes && (
+            <div className="p-3 rounded-2xl bg-[#FFF7ED] border border-[#FED7AA] text-[#57534E]">
+              <span className="font-black text-[#292524]">Critério de validação: </span>
+              {structuredSpec.validationNotes}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 };

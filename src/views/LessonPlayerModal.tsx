@@ -357,7 +357,15 @@ export const LessonPlayerModal: React.FC<LessonPlayerModalProps> = ({
                               : 'bg-white border-[#F1EAE2] border-b-[#FED7AA] hover:bg-[#FFFDF9] text-[#292524]'}
                           `}
                         >
-                          {opt.glyph && <span className="text-3xl shrink-0">{opt.glyph}</span>}
+                          {opt.realImageUrl ? (
+                            <img 
+                              src={opt.realImageUrl} 
+                              alt={opt.text} 
+                              className="w-12 h-12 rounded-2xl object-cover shrink-0 border border-[#FED7AA] shadow-xs" 
+                            />
+                          ) : opt.glyph ? (
+                            <span className="text-3xl shrink-0">{opt.glyph}</span>
+                          ) : null}
                           <div>
                             <div className="font-black text-base">{opt.text}</div>
                             {opt.explanation && <div className="text-xs text-[#78716C] font-medium">{opt.explanation}</div>}
@@ -471,7 +479,15 @@ export const LessonPlayerModal: React.FC<LessonPlayerModalProps> = ({
                             : 'bg-white text-[#292524] border-[#F1EAE2] border-b-[#FED7AA] hover:bg-[#FFF7ED]'}
                         `}
                       >
-                        <span className="text-2xl">{p.signGlyph}</span>
+                        {p.realImageUrl ? (
+                          <img 
+                            src={p.realImageUrl} 
+                            alt={p.signName} 
+                            className="w-10 h-10 rounded-xl object-cover shrink-0 border border-[#FED7AA] shadow-xs" 
+                          />
+                        ) : (
+                          <span className="text-2xl">{p.signGlyph}</span>
+                        )}
                         <div>
                           <div className="font-black text-xs sm:text-sm">{p.signName}</div>
                           <div className="text-[10px] text-[#78716C]">{p.handshape}</div>

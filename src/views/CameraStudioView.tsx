@@ -1,33 +1,60 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { 
-  Camera, 
-  RefreshCw, 
-  Maximize2, 
-  Minimize2, 
-  ArrowLeft, 
-  FlipHorizontal,
-  Hand,
-  Smile,
+import React, { useState, useRef, useEffect, useCallback } from 'react';
+import {
+  Camera,
+  ArrowLeft,
+  Volume2,
+  Copy,
+  Trash2,
   Sparkles,
-  Loader2,
-  HelpCircle,
-  CheckCircle2,
-  Eye,
+  Check,
+  FlipHorizontal,
+  RefreshCw,
+  Play,
+  Pause,
+  ChevronDown,
+  ChevronUp,
   Info,
-  User,
-  Layers,
-  Activity
+  Delete,
+  SlidersHorizontal,
+  AlertTriangle,
+  ShieldCheck,
+  X
 } from 'lucide-react';
-import { 
-  FilesetResolver, 
-  HandLandmarker, 
-  FaceLandmarker, 
+import {
+  FilesetResolver,
+  HolisticLandmarker,
+  HandLandmarker,
   PoseLandmarker,
-  DrawingUtils 
+  FaceLandmarker,
+  DrawingUtils
 } from '@mediapipe/tasks-vision';
 import { UserProfile } from '../types';
+import {
+  HandednessLabel,
+  HandGeometryFeatures,
+  HoldToConfirmState,
+  NmfExpressionType,
+  RecognitionEvaluation
+} from '../types/librasRecognition';
+import { LIBRAS_SIGN_DATABASE } from '../data/librasSignDatabase';
+import {
+  extractBodyContext,
+  extractFaceExpressions,
+  extractHandGeometry
+} from '../services/multimodalGeometry';
+import { TemporalMotionBuffer } from '../services/temporalAnalyzer';
+import {
+  createInitialHoldState,
+  stepHoldToConfirm
+} from '../services/holdToConfirm';
+import {
+  RecognizedSign,
+  buildTranslationOutput,
+  evaluateMultimodalLibrasSign,
+  speakPortugueseText,
+  toRecognizedSign
+} from '../services/librasTranslatorService';
 import { soundService } from '../services/soundService';
-import { LibiMascot } from '../components/LibiMascot';
 
 interface CameraStudioViewProps {
   userProfile?: UserProfile;
@@ -35,33 +62,33 @@ interface CameraStudioViewProps {
   onEarnReward?: (xp: number, gems: number) => void;
 }
 
-export type FacialExpressionState = 
-  | 'neutro'
-  | 'pergunta_geral'   // Sobrancelhas levantadas (Sim/Não)
-  | 'duvida_especifica' // Sobrancelhas franzidas (Quem? Onde? Por quê?)
-  | 'afirmativo_sorriso' // Sorriso amigável
-  | 'enfase_espanto';   // Boca aberta / Olhos arregalados
-
-export type SignHeightZone = 
-  | 'topo_cabeca_testa' // Testa / Alto da Cabeça (Saber, Aprender, Pensar)
-  | 'olhos_tempora'     // Olhos / Têmpora (Ver, Olhar, Dia)
-  | 'boca_queixo'       // Boca / Queixo (Comer, Falar, Desculpa, Bom)
-  | 'peito_tronco'      // Peito / Ombros (Gostar, Amar, Meu Nome, Saudade)
-  | 'espaco_neutro'     // Espaço Neutro / Abdômen (Casa, Trabalhar, Ajudar, Carro)
-  | 'abaixo_cintura'    // Abaixo da Cintura
-  | 'indefinido';
+const NMF_LABELS: Record<NmfExpressionType, string> = {
+  neutral: 'Expressão Neutra',
+  interrogative_brows_up: 'Interrogativa (Sobrancelhas Erguidas)',
+  wh_brows_furrowed: 'Dúvida / WH (Sobrancelhas Franzidas)',
+  negative_head_shake: 'Negação (Cabeça)',
+  affirmative_nod: 'Afirmação (Cabeça)',
+  positive_smile: 'Expressão Positiva',
+  any: 'Neutra'
+};
 
 export const CameraStudioView: React.FC<CameraStudioViewProps> = ({
   onClose
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  
-  // MediaPipe Vision Tasks
+
+  // MediaPipe Vision Tasks (Holistic primary, Hand+Pose+Face fallback)
+  const holisticLandmarkerRef = useRef<HolisticLandmarker | null>(null);
   const handLandmarkerRef = useRef<HandLandmarker | null>(null);
-  const faceLandmarkerRef = useRef<FaceLandmarker | null>(null);
   const poseLandmarkerRef = useRef<PoseLandmarker | null>(null);
+  const faceLandmarkerRef = useRef<FaceLandmarker | null>(null);
+  const usingHolisticRef = useRef<boolean>(false);
   const requestAnimationRef = useRef<number | null>(null);
+
+  // Temporal & Hold-to-Confirm state machines
+  const temporalBufferRef = useRef<TemporalMotionBuffer>(new TemporalMotionBuffer(36, 1500));
+  const holdStateRef = useRef<HoldToConfirmState>(createInitialHoldState());
 
   // Camera states
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -69,131 +96,182 @@ export const CameraStudioView: React.FC<CameraStudioViewProps> = ({
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [isMirrored, setIsMirrored] = useState<boolean>(true);
-  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
-
-  // Tracking toggles & states
   const [isModelLoading, setIsModelLoading] = useState<boolean>(true);
-  const [showHandSkeleton, setShowHandSkeleton] = useState<boolean>(true);
-  const [showFaceMesh, setShowFaceMesh] = useState<boolean>(true);
-  const [showPoseSkeleton, setShowPoseSkeleton] = useState<boolean>(true);
+  const [trackingEngineMode, setTrackingEngineMode] = useState<'holistic' | 'multimodal' | 'loading'>('loading');
 
-  const [handsDetectedCount, setHandsDetectedCount] = useState<number>(0);
-  const [faceDetected, setFaceDetected] = useState<boolean>(false);
-  const [poseDetected, setPoseDetected] = useState<boolean>(false);
+  // Recognition & Calibration states
+  const [isTranslating, setIsTranslating] = useState<boolean>(true);
+  const [confidenceThreshold, setConfidenceThreshold] = useState<number>(76);
+  const [holdDurationMs, setHoldDurationMs] = useState<number>(650);
+  const [showCalibration, setShowCalibration] = useState<boolean>(false);
 
-  const [currentExpression, setCurrentExpression] = useState<FacialExpressionState>('neutro');
-  const [expressionConfidence, setExpressionConfidence] = useState<number>(0);
+  const [evaluation, setEvaluation] = useState<RecognitionEvaluation>({
+    status: 'no_hands',
+    sign: null,
+    confidence: 0,
+    breakdown: null,
+    topCandidate: null,
+    message: 'Posicione suas mãos diante da câmera.',
+    nmfDetected: 'neutral'
+  });
+  const [holdProgress, setHoldProgress] = useState<number>(0);
 
-  // Sign Height & Articulation Location Tracking
-  const [currentSignHeight, setCurrentSignHeight] = useState<SignHeightZone>('indefinido');
-  const [heightConfidence, setHeightConfidence] = useState<number>(0);
+  // Phrase & Correction States
+  const [signSequence, setSignSequence] = useState<RecognizedSign[]>([]);
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [copied, setCopied] = useState<boolean>(false);
+  const [showSignsGuide, setShowSignsGuide] = useState<boolean>(false);
 
-  // Initialize MediaPipe Vision Tasks (Hand, Face, Pose)
+  // Refs synced for animation loop
+  const confidenceThresholdRef = useRef(confidenceThreshold);
+  confidenceThresholdRef.current = confidenceThreshold;
+  const holdDurationMsRef = useRef(holdDurationMs);
+  holdDurationMsRef.current = holdDurationMs;
+  const isMirroredRef = useRef(isMirrored);
+  isMirroredRef.current = isMirrored;
+
+  // Initialize MediaPipe Multimodal Vision (Holistic primary, Hand+Pose+Face fallback)
   useEffect(() => {
     let isMounted = true;
 
     async function initMediaPipeVision() {
       try {
         setIsModelLoading(true);
+        setTrackingEngineMode('loading');
 
         const vision = await FilesetResolver.forVisionTasks(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@latest/wasm'
+          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm'
         );
 
         if (!isMounted) return;
 
-        // 1. Initialize Hand Landmarker
+        // 1. Try MediaPipe HolisticLandmarker (Hands + Pose + Face simultaneously)
+        let holisticReady = false;
+        for (const delegate of ['GPU', 'CPU'] as const) {
+          try {
+            holisticLandmarkerRef.current = await HolisticLandmarker.createFromOptions(vision, {
+              baseOptions: {
+                modelAssetPath:
+                  'https://storage.googleapis.com/mediapipe-models/holistic_landmarker/holistic_landmarker/float16/1/holistic_landmarker.task',
+                delegate
+              },
+              runningMode: 'VIDEO',
+              minFaceDetectionConfidence: 0.5,
+              minFacePresenceConfidence: 0.5,
+              minPoseDetectionConfidence: 0.5,
+              minPosePresenceConfidence: 0.5,
+              minHandLandmarksConfidence: 0.5,
+              outputFaceBlendshapes: true
+            });
+            usingHolisticRef.current = true;
+            holisticReady = true;
+            break;
+          } catch (err) {
+            console.warn(`HolisticLandmarker (${delegate}) fallback check:`, err);
+          }
+        }
+
+        if (!isMounted) return;
+
+        if (holisticReady) {
+          setTrackingEngineMode('holistic');
+          setIsModelLoading(false);
+          return;
+        }
+
+        // 2. Fallback: Multimodal HandLandmarker + PoseLandmarker + FaceLandmarker
+        usingHolisticRef.current = false;
+
         try {
           handLandmarkerRef.current = await HandLandmarker.createFromOptions(vision, {
             baseOptions: {
               modelAssetPath:
                 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
-              delegate: 'GPU',
+              delegate: 'GPU'
             },
             runningMode: 'VIDEO',
             numHands: 2,
-            minHandDetectionConfidence: 0.5,
-            minHandPresenceConfidence: 0.5,
-            minTrackingConfidence: 0.5,
+            minHandDetectionConfidence: 0.55,
+            minHandPresenceConfidence: 0.55,
+            minTrackingConfidence: 0.55
           });
-        } catch (gpuErr) {
+        } catch {
           handLandmarkerRef.current = await HandLandmarker.createFromOptions(vision, {
             baseOptions: {
               modelAssetPath:
                 'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
-              delegate: 'CPU',
+              delegate: 'CPU'
             },
             runningMode: 'VIDEO',
             numHands: 2,
-            minHandDetectionConfidence: 0.5,
-            minHandPresenceConfidence: 0.5,
-            minTrackingConfidence: 0.5,
+            minHandDetectionConfidence: 0.55,
+            minHandPresenceConfidence: 0.55,
+            minTrackingConfidence: 0.55
           });
         }
 
-        // 2. Initialize Face Landmarker (NMF - Expressões Não-Manuais)
-        try {
-          faceLandmarkerRef.current = await FaceLandmarker.createFromOptions(vision, {
-            baseOptions: {
-              modelAssetPath:
-                'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
-              delegate: 'GPU',
-            },
-            runningMode: 'VIDEO',
-            numFaces: 1,
-            minFaceDetectionConfidence: 0.5,
-            minFacePresenceConfidence: 0.5,
-            minTrackingConfidence: 0.5,
-            outputFaceBlendshapes: true,
-          });
-        } catch (gpuErr) {
-          faceLandmarkerRef.current = await FaceLandmarker.createFromOptions(vision, {
-            baseOptions: {
-              modelAssetPath:
-                'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
-              delegate: 'CPU',
-            },
-            runningMode: 'VIDEO',
-            numFaces: 1,
-            minFaceDetectionConfidence: 0.5,
-            minFacePresenceConfidence: 0.5,
-            minTrackingConfidence: 0.5,
-            outputFaceBlendshapes: true,
-          });
-        }
-
-        // 3. Initialize Pose Landmarker (Altura e Ponto de Articulação dos Sinais de Libras)
         try {
           poseLandmarkerRef.current = await PoseLandmarker.createFromOptions(vision, {
             baseOptions: {
               modelAssetPath:
                 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
-              delegate: 'GPU',
+              delegate: 'GPU'
             },
             runningMode: 'VIDEO',
             minPoseDetectionConfidence: 0.5,
             minPosePresenceConfidence: 0.5,
-            minTrackingConfidence: 0.5,
+            minTrackingConfidence: 0.5
           });
-        } catch (gpuErr) {
+        } catch {
           poseLandmarkerRef.current = await PoseLandmarker.createFromOptions(vision, {
             baseOptions: {
               modelAssetPath:
                 'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
-              delegate: 'CPU',
+              delegate: 'CPU'
             },
             runningMode: 'VIDEO',
             minPoseDetectionConfidence: 0.5,
             minPosePresenceConfidence: 0.5,
-            minTrackingConfidence: 0.5,
+            minTrackingConfidence: 0.5
+          });
+        }
+
+        try {
+          faceLandmarkerRef.current = await FaceLandmarker.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath:
+                'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+              delegate: 'GPU'
+            },
+            runningMode: 'VIDEO',
+            numFaces: 1,
+            outputFaceBlendshapes: true,
+            minFaceDetectionConfidence: 0.5,
+            minFacePresenceConfidence: 0.5,
+            minTrackingConfidence: 0.5
+          });
+        } catch {
+          faceLandmarkerRef.current = await FaceLandmarker.createFromOptions(vision, {
+            baseOptions: {
+              modelAssetPath:
+                'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
+              delegate: 'CPU'
+            },
+            runningMode: 'VIDEO',
+            numFaces: 1,
+            outputFaceBlendshapes: true,
+            minFaceDetectionConfidence: 0.5,
+            minFacePresenceConfidence: 0.5,
+            minTrackingConfidence: 0.5
           });
         }
 
         if (isMounted) {
+          setTrackingEngineMode('multimodal');
           setIsModelLoading(false);
         }
-      } catch (err: any) {
-        console.error('Error initializing MediaPipe vision:', err);
+      } catch (err) {
+        console.error('Error initializing MediaPipe multimodal vision:', err);
         if (isMounted) {
           setIsModelLoading(false);
         }
@@ -204,22 +282,17 @@ export const CameraStudioView: React.FC<CameraStudioViewProps> = ({
 
     return () => {
       isMounted = false;
-      if (handLandmarkerRef.current) {
-        handLandmarkerRef.current.close();
-        handLandmarkerRef.current = null;
-      }
-      if (faceLandmarkerRef.current) {
-        faceLandmarkerRef.current.close();
-        faceLandmarkerRef.current = null;
-      }
-      if (poseLandmarkerRef.current) {
-        poseLandmarkerRef.current.close();
-        poseLandmarkerRef.current = null;
-      }
+      holisticLandmarkerRef.current?.close();
+      holisticLandmarkerRef.current = null;
+      handLandmarkerRef.current?.close();
+      handLandmarkerRef.current = null;
+      poseLandmarkerRef.current?.close();
+      poseLandmarkerRef.current = null;
+      faceLandmarkerRef.current?.close();
+      faceLandmarkerRef.current = null;
     };
   }, []);
 
-  // Start Camera
   const startCamera = async () => {
     setCameraError(null);
     try {
@@ -229,11 +302,11 @@ export const CameraStudioView: React.FC<CameraStudioViewProps> = ({
 
       const mediaStream = await navigator.mediaDevices.getUserMedia({
         video: {
-          facingMode: facingMode,
+          facingMode,
           width: { ideal: 1280 },
-          height: { ideal: 720 },
+          height: { ideal: 720 }
         },
-        audio: false,
+        audio: false
       });
 
       setStream(mediaStream);
@@ -255,7 +328,6 @@ export const CameraStudioView: React.FC<CameraStudioViewProps> = ({
     }
   };
 
-  // Stop camera
   const stopCamera = () => {
     if (requestAnimationRef.current) {
       cancelAnimationFrame(requestAnimationRef.current);
@@ -268,6 +340,8 @@ export const CameraStudioView: React.FC<CameraStudioViewProps> = ({
     if (videoRef.current) {
       videoRef.current.srcObject = null;
     }
+    temporalBufferRef.current.clear();
+    holdStateRef.current = createInitialHoldState();
     setCameraActive(false);
   };
 
@@ -278,16 +352,22 @@ export const CameraStudioView: React.FC<CameraStudioViewProps> = ({
     };
   }, [facingMode]);
 
-  // Real-time Detection Loop: Hands, Face & Pose Height
+  const handleAddSign = useCallback((sign: RecognizedSign) => {
+    setSignSequence((prev) => {
+      if (prev.length > 0 && prev[prev.length - 1].id === sign.id) {
+        return prev;
+      }
+      return [...prev, sign];
+    });
+  }, []);
+
+  // Real-time Multimodal Recognition Loop
   useEffect(() => {
     let lastVideoTime = -1;
 
     const predictLoop = () => {
       const video = videoRef.current;
       const canvas = canvasRef.current;
-      const handLandmarker = handLandmarkerRef.current;
-      const faceLandmarker = faceLandmarkerRef.current;
-      const poseLandmarker = poseLandmarkerRef.current;
 
       if (video && canvas && video.readyState >= 2) {
         if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
@@ -301,198 +381,169 @@ export const CameraStudioView: React.FC<CameraStudioViewProps> = ({
 
           if (video.currentTime !== lastVideoTime) {
             lastVideoTime = video.currentTime;
-            const startTimeMs = performance.now();
+            const nowMs = performance.now();
             const drawingUtils = new DrawingUtils(ctx);
 
-            let poseData: any = null;
-            let handYValues: number[] = [];
+            const extractedHands: HandGeometryFeatures[] = [];
+            let poseLandmarks: { x: number; y: number; z?: number }[] | undefined;
+            let faceLandmarks: { x: number; y: number; z?: number }[] | undefined;
+            let faceBlendshapes: any[] | undefined;
 
-            // 1. Pose Tracking for Body Frame & Height Reference
-            if (poseLandmarker) {
+            // A) Holistic pipeline
+            if (usingHolisticRef.current && holisticLandmarkerRef.current) {
               try {
-                const poseResults = poseLandmarker.detectForVideo(video, startTimeMs);
-                if (poseResults && poseResults.landmarks && poseResults.landmarks.length > 0) {
-                  setPoseDetected(true);
-                  poseData = poseResults.landmarks[0];
-
-                  if (showPoseSkeleton) {
-                    // Draw Pose Connectors
-                    drawingUtils.drawConnectors(poseData, PoseLandmarker.POSE_CONNECTIONS, {
-                      color: 'rgba(255, 255, 255, 0.4)',
-                      lineWidth: 2,
-                    });
-                    // Key Joints (Shoulders, Elbows, Wrists)
-                    drawingUtils.drawLandmarks(poseData, {
-                      color: '#FF6B00',
-                      fillColor: '#FFFFFF',
-                      lineWidth: 1.5,
-                      radius: 3,
-                    });
-                  }
-                } else {
-                  setPoseDetected(false);
+                const hRes = holisticLandmarkerRef.current.detectForVideo(video, nowMs);
+                if (hRes.poseLandmarks?.length) {
+                  poseLandmarks = hRes.poseLandmarks[0];
                 }
-              } catch (e) {
-                // frame error ignore
-              }
-            }
-
-            // 2. Hand Tracking
-            if (handLandmarker) {
-              try {
-                const handResults = handLandmarker.detectForVideo(video, startTimeMs);
-                if (handResults && handResults.landmarks && handResults.landmarks.length > 0) {
-                  setHandsDetectedCount(handResults.landmarks.length);
-
-                  for (const landmarks of handResults.landmarks) {
-                    // Average Y of wrist + MCP joints
-                    const wristY = landmarks[0].y;
-                    const indexMcpY = landmarks[5].y;
-                    const avgY = (wristY + indexMcpY) / 2;
-                    handYValues.push(avgY);
-
-                    if (showHandSkeleton) {
-                      drawingUtils.drawConnectors(landmarks, HandLandmarker.HAND_CONNECTIONS, {
-                        color: '#FF6B00',
-                        lineWidth: 4,
-                      });
-                      drawingUtils.drawLandmarks(landmarks, {
-                        color: '#FFFFFF',
-                        fillColor: '#EA580C',
-                        lineWidth: 1.5,
-                        radius: 4,
-                      });
-                    }
-                  }
-                } else {
-                  setHandsDetectedCount(0);
+                if (hRes.faceLandmarks?.length) {
+                  faceLandmarks = hRes.faceLandmarks[0];
                 }
-              } catch (e) {
-                // frame error ignore
-              }
-            }
-
-            // 3. Face & NMF Expression Tracking
-            if (faceLandmarker) {
-              try {
-                const faceResults = faceLandmarker.detectForVideo(video, startTimeMs);
-                if (faceResults && faceResults.faceLandmarks && faceResults.faceLandmarks.length > 0) {
-                  setFaceDetected(true);
-                  const landmarks = faceResults.faceLandmarks[0];
-
-                  if (showFaceMesh) {
-                    // Facial Oval & Contours
-                    drawingUtils.drawConnectors(landmarks, FaceLandmarker.FACE_LANDMARKS_FACE_OVAL, {
-                      color: '#FED7AA',
-                      lineWidth: 1.5,
-                    });
-                    // Eyebrows
-                    drawingUtils.drawConnectors(landmarks, FaceLandmarker.FACE_LANDMARKS_RIGHT_EYEBROW, {
-                      color: '#FF6B00',
-                      lineWidth: 3,
-                    });
-                    drawingUtils.drawConnectors(landmarks, FaceLandmarker.FACE_LANDMARKS_LEFT_EYEBROW, {
-                      color: '#FF6B00',
-                      lineWidth: 3,
-                    });
-                    // Lips
-                    drawingUtils.drawConnectors(landmarks, FaceLandmarker.FACE_LANDMARKS_LIPS, {
-                      color: '#F97316',
-                      lineWidth: 2,
-                    });
-                  }
-
-                  // Analyze NMF Blendshapes
-                  if (faceResults.faceBlendshapes && faceResults.faceBlendshapes.length > 0) {
-                    const blendshapes = faceResults.faceBlendshapes[0].categories;
-                    const getScore = (name: string) => {
-                      const shape = blendshapes.find((b) => b.categoryName === name);
-                      return shape ? shape.score : 0;
-                    };
-
-                    const browInnerUp = getScore('browInnerUp');
-                    const browDownLeft = getScore('browDownLeft');
-                    const browDownRight = getScore('browDownRight');
-                    const mouthSmile = (getScore('mouthSmileLeft') + getScore('mouthSmileRight')) / 2;
-                    const jawOpen = getScore('jawOpen');
-                    const browFurrow = (browDownLeft + browDownRight) / 2;
-
-                    if (browInnerUp > 0.45) {
-                      setCurrentExpression('pergunta_geral');
-                      setExpressionConfidence(Math.round(browInnerUp * 100));
-                    } else if (browFurrow > 0.35) {
-                      setCurrentExpression('duvida_especifica');
-                      setExpressionConfidence(Math.round(browFurrow * 100));
-                    } else if (mouthSmile > 0.4) {
-                      setCurrentExpression('afirmativo_sorriso');
-                      setExpressionConfidence(Math.round(mouthSmile * 100));
-                    } else if (jawOpen > 0.5) {
-                      setCurrentExpression('enfase_espanto');
-                      setExpressionConfidence(Math.round(jawOpen * 100));
-                    } else {
-                      setCurrentExpression('neutro');
-                      setExpressionConfidence(0);
-                    }
-                  }
-                } else {
-                  setFaceDetected(false);
-                  setCurrentExpression('neutro');
+                if (hRes.faceBlendshapes?.length) {
+                  faceBlendshapes = hRes.faceBlendshapes;
                 }
-              } catch (e) {
-                // frame error ignore
+                if (hRes.leftHandLandmarks?.length) {
+                  const lms = hRes.leftHandLandmarks[0];
+                  const world = hRes.leftHandWorldLandmarks?.[0];
+                  extractedHands.push(extractHandGeometry(lms, 'Left', world));
+                }
+                if (hRes.rightHandLandmarks?.length) {
+                  const lms = hRes.rightHandLandmarks[0];
+                  const world = hRes.rightHandWorldLandmarks?.[0];
+                  extractedHands.push(extractHandGeometry(lms, 'Right', world));
+                }
+              } catch {
+                // ignore occasional video timestamp race
               }
-            }
-
-            // 4. Calculate Sign Height Relative to Pose Landmarks (Ponto de Articulação - PA)
-            if (handYValues.length > 0 && poseData) {
-              const activeHandY = Math.min(...handYValues); // highest active hand
-              
-              const noseY = poseData[0]?.y || 0.25;
-              const leftEyeY = poseData[2]?.y || 0.22;
-              const mouthY = (poseData[9]?.y + poseData[10]?.y) / 2 || 0.32;
-              const leftShoulderY = poseData[11]?.y || 0.42;
-              const rightShoulderY = poseData[12]?.y || 0.42;
-              const shouldersY = (leftShoulderY + rightShoulderY) / 2;
-              const chestY = shouldersY + 0.12;
-              const leftHipY = poseData[23]?.y || 0.75;
-              const rightHipY = poseData[24]?.y || 0.75;
-              const hipsY = (leftHipY + rightHipY) / 2;
-
-              if (activeHandY < leftEyeY - 0.02) {
-                setCurrentSignHeight('topo_cabeca_testa');
-                setHeightConfidence(95);
-              } else if (activeHandY < noseY + 0.03) {
-                setCurrentSignHeight('olhos_tempora');
-                setHeightConfidence(90);
-              } else if (activeHandY < shouldersY - 0.02) {
-                setCurrentSignHeight('boca_queixo');
-                setHeightConfidence(92);
-              } else if (activeHandY < chestY + 0.05) {
-                setCurrentSignHeight('peito_tronco');
-                setHeightConfidence(88);
-              } else if (activeHandY < hipsY) {
-                setCurrentSignHeight('espaco_neutro');
-                setHeightConfidence(85);
-              } else {
-                setCurrentSignHeight('abaixo_cintura');
-                setHeightConfidence(80);
-              }
-            } else if (handYValues.length > 0) {
-              // Fallback based on normalized screen coordinates
-              const avgY = handYValues[0];
-              if (avgY < 0.28) {
-                setCurrentSignHeight('topo_cabeca_testa');
-              } else if (avgY < 0.38) {
-                setCurrentSignHeight('boca_queixo');
-              } else if (avgY < 0.55) {
-                setCurrentSignHeight('peito_tronco');
-              } else {
-                setCurrentSignHeight('espaco_neutro');
-              }
-              setHeightConfidence(75);
             } else {
-              setCurrentSignHeight('indefinido');
-              setHeightConfidence(0);
+              // B) Separate Hand + Pose + Face Landmarkers pipeline
+              if (poseLandmarkerRef.current) {
+                try {
+                  const poseRes = poseLandmarkerRef.current.detectForVideo(video, nowMs);
+                  if (poseRes.landmarks?.length) {
+                    poseLandmarks = poseRes.landmarks[0];
+                  }
+                } catch {
+                  // ignore
+                }
+              }
+
+              if (faceLandmarkerRef.current) {
+                try {
+                  const faceRes = faceLandmarkerRef.current.detectForVideo(video, nowMs);
+                  if (faceRes.faceLandmarks?.length) {
+                    faceLandmarks = faceRes.faceLandmarks[0];
+                  }
+                  if (faceRes.faceBlendshapes?.length) {
+                    faceBlendshapes = faceRes.faceBlendshapes;
+                  }
+                } catch {
+                  // ignore
+                }
+              }
+
+              if (handLandmarkerRef.current) {
+                try {
+                  const handRes = handLandmarkerRef.current.detectForVideo(video, nowMs);
+                  if (handRes.landmarks?.length) {
+                    for (let i = 0; i < handRes.landmarks.length; i++) {
+                      const rawCat = handRes.handedness?.[i]?.[0]?.categoryName;
+                      // In unmirrored video input, HandLandmarker labels reflect mirrored selfie convention
+                      let label: HandednessLabel = 'Unknown';
+                      if (rawCat === 'Left') label = isMirroredRef.current ? 'Right' : 'Left';
+                      if (rawCat === 'Right') label = isMirroredRef.current ? 'Left' : 'Right';
+
+                      extractedHands.push(
+                        extractHandGeometry(handRes.landmarks[i], label, handRes.worldLandmarks?.[i])
+                      );
+                    }
+                  }
+                } catch {
+                  // ignore
+                }
+              }
+            }
+
+            // Draw clean hand landmarks (and subtle shoulder reference dots)
+            for (const hand of extractedHands) {
+              const drawableLandmarks = hand.landmarks.map((p) => ({
+                x: p.x,
+                y: p.y,
+                z: p.z,
+                visibility: 1
+              }));
+              drawingUtils.drawConnectors(drawableLandmarks, HandLandmarker.HAND_CONNECTIONS, {
+                color: 'rgba(255, 107, 0, 0.72)',
+                lineWidth: 2.2
+              });
+              drawingUtils.drawLandmarks(drawableLandmarks, {
+                color: '#FFFFFF',
+                fillColor: '#FF6B00',
+                lineWidth: 1.5,
+                radius: 3
+              });
+            }
+
+            if (poseLandmarks && poseLandmarks.length > 12) {
+              // Subtle shoulder anchor points only (clean camera)
+              const anchors = [poseLandmarks[11], poseLandmarks[12]]
+                .filter(Boolean)
+                .map((p) => ({ x: p.x, y: p.y, z: p.z ?? 0, visibility: 1 }));
+              drawingUtils.drawLandmarks(anchors, {
+                color: 'rgba(255,255,255,0.45)',
+                fillColor: 'rgba(56, 189, 248, 0.65)',
+                radius: 4
+              });
+            }
+
+            // Multimodal Feature Extraction & Temporal Buffer Update
+            if (isTranslating) {
+              if (extractedHands.length > 0) {
+                const bodyCtx = extractBodyContext(poseLandmarks, extractedHands);
+                const faceCtx = extractFaceExpressions(faceLandmarks, faceBlendshapes);
+
+                temporalBufferRef.current.push({
+                  timestampMs: nowMs,
+                  hands: extractedHands,
+                  body: bodyCtx,
+                  face: faceCtx
+                });
+
+                const evalResult = evaluateMultimodalLibrasSign(temporalBufferRef.current, {
+                  confidenceThreshold: confidenceThresholdRef.current,
+                  minFramesRequired: 4
+                });
+
+                const holdStep = stepHoldToConfirm(holdStateRef.current, evalResult, nowMs, {
+                  holdDurationMs: holdDurationMsRef.current,
+                  releaseNeutralFramesRequired: 4
+                });
+                holdStateRef.current = holdStep.nextState;
+
+                setEvaluation(evalResult);
+                setHoldProgress(holdStep.nextState.progressPercent);
+
+                if (holdStep.newlyConfirmedSign) {
+                  soundService.playCorrect();
+                  handleAddSign(toRecognizedSign(holdStep.newlyConfirmedSign));
+                }
+              } else {
+                // Tracking lost -> clear temporal sequence & reset Hold-to-Confirm immediately
+                temporalBufferRef.current.clear();
+                const noHandsEval: RecognitionEvaluation = {
+                  status: 'no_hands',
+                  sign: null,
+                  confidence: 0,
+                  breakdown: null,
+                  topCandidate: null,
+                  message: 'Posicione suas mãos diante da câmera.',
+                  nmfDetected: 'neutral'
+                };
+                const resetStep = stepHoldToConfirm(holdStateRef.current, noHandsEval, nowMs);
+                holdStateRef.current = resetStep.nextState;
+                setEvaluation(noHandsEval);
+                setHoldProgress(0);
+              }
             }
           }
         }
@@ -511,109 +562,68 @@ export const CameraStudioView: React.FC<CameraStudioViewProps> = ({
         requestAnimationRef.current = null;
       }
     };
-  }, [cameraActive, showHandSkeleton, showFaceMesh, showPoseSkeleton]);
+  }, [cameraActive, isTranslating, handleAddSign]);
 
-  // Fullscreen toggle
-  const toggleFullscreen = () => {
+  // Phrase output synthesis (explicitly separating isolated signs from contextual suggestions)
+  const translationOutput = buildTranslationOutput(
+    signSequence.map((s) => s.gloss),
+    evaluation.nmfDetected
+  );
+
+  const activeSpeechText =
+    translationOutput.contextualSuggestion ?? translationOutput.literalPortuguese;
+
+  // Phrase & Manual Correction Actions
+  const handleClear = () => {
     soundService.playTap();
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch((err) => console.log(err));
-      setIsFullscreen(true);
+    setSignSequence([]);
+    setEditingIndex(null);
+  };
+
+  const handleUndoLast = () => {
+    soundService.playPop();
+    setSignSequence((prev) => prev.slice(0, -1));
+    setEditingIndex(null);
+  };
+
+  const handleRemoveAtIndex = (index: number) => {
+    soundService.playPop();
+    setSignSequence((prev) => prev.filter((_, idx) => idx !== index));
+    if (editingIndex === index) setEditingIndex(null);
+  };
+
+  const handleSpeak = () => {
+    soundService.playTap();
+    if (signSequence.length === 0) return;
+    speakPortugueseText(activeSpeechText);
+  };
+
+  const handleCopy = () => {
+    soundService.playTap();
+    if (signSequence.length === 0) return;
+    navigator.clipboard.writeText(activeSpeechText).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  const handleManualPickSign = (sign: RecognizedSign) => {
+    soundService.playTap();
+    if (editingIndex !== null) {
+      setSignSequence((prev) =>
+        prev.map((item, idx) => (idx === editingIndex ? sign : item))
+      );
+      setEditingIndex(null);
     } else {
-      if (document.exitFullscreen) {
-        document.exitFullscreen().catch((err) => console.log(err));
-        setIsFullscreen(false);
-      }
+      handleAddSign(sign);
     }
   };
-
-  const handleSwitchCamera = () => {
-    soundService.playTap();
-    setFacingMode((prev) => (prev === 'user' ? 'environment' : 'user'));
-  };
-
-  const handleToggleMirror = () => {
-    soundService.playTap();
-    setIsMirrored((prev) => !prev);
-  };
-
-  // Height definitions for Libras Articulation Location
-  const heightDetails = {
-    topo_cabeca_testa: {
-      label: 'Testa / Topo da Cabeça',
-      icon: '🧠',
-      color: 'from-amber-500 to-orange-600',
-      textColor: 'text-amber-400',
-      badgeBg: 'bg-amber-950/80 border-amber-500/50',
-      signs: ['APRENDER', 'SABER', 'PENSAR', 'CONHECER', 'LEMBRAR'],
-      desc: 'Ponto de Articulação Superior: Sinais cognitivos, mentais e de memória.'
-    },
-    olhos_tempora: {
-      label: 'Olhos / Têmpora',
-      icon: '👁️',
-      color: 'from-sky-500 to-blue-600',
-      textColor: 'text-sky-400',
-      badgeBg: 'bg-sky-950/80 border-sky-500/50',
-      signs: ['VER', 'OLHAR', 'DIA', 'AMANHÃ', 'ESTRANHO'],
-      desc: 'Ponto de Articulação Visual: Sinais de percepção, observação e tempo.'
-    },
-    boca_queixo: {
-      label: 'Boca / Queixo',
-      icon: '👄',
-      color: 'from-rose-500 to-red-600',
-      textColor: 'text-rose-400',
-      badgeBg: 'bg-rose-950/80 border-rose-500/50',
-      signs: ['COMER', 'BEBER', 'BOM', 'DESCULPA', 'OBRIGADO', 'FALAR'],
-      desc: 'Ponto de Articulação Oral: Sinais de alimentação, fala, cortesia e saudação.'
-    },
-    peito_tronco: {
-      label: 'Peito / Tronco Superior',
-      icon: '🫁',
-      color: 'from-orange-500 to-amber-600',
-      textColor: 'text-orange-400',
-      badgeBg: 'bg-orange-950/80 border-orange-500/50',
-      signs: ['MEU NOME', 'GOSTAR', 'AMAR', 'SAUDADE', 'SENTIR', 'BRASIL'],
-      desc: 'Ponto de Articulação Torácico: Sinais de sentimentos, identidade e afeto.'
-    },
-    espaco_neutro: {
-      label: 'Espaço Neutro (À frente do corpo)',
-      icon: '🌐',
-      color: 'from-emerald-500 to-teal-600',
-      textColor: 'text-emerald-400',
-      badgeBg: 'bg-emerald-950/80 border-emerald-500/50',
-      signs: ['CASA', 'TRABALHAR', 'AJUDAR', 'LIVRO', 'CARRO', 'LIBRAS', 'ESTUDAR'],
-      desc: 'Ponto de Articulação Neutro: Maioria dos sinais descritivos, verbos e objetos.'
-    },
-    abaixo_cintura: {
-      label: 'Abaixo da Cintura',
-      icon: '🔽',
-      color: 'from-stone-600 to-stone-800',
-      textColor: 'text-stone-400',
-      badgeBg: 'bg-stone-900/80 border-stone-600/50',
-      signs: ['SENTAR', 'CAMINHAR', 'ABAIXO'],
-      desc: 'Posição baixa: Movimentos de locomoção e espaço inferior.'
-    },
-    indefinido: {
-      label: 'Posicione as mãos na câmera',
-      icon: '🤟',
-      color: 'from-stone-700 to-stone-900',
-      textColor: 'text-stone-400',
-      badgeBg: 'bg-stone-950/80 border-stone-800',
-      signs: [],
-      desc: 'Sinalize em frente à webcam para detectar a altura e o ponto de articulação.'
-    }
-  };
-
-  const currentHeightInfo = heightDetails[currentSignHeight];
 
   return (
-    <div className="fixed inset-0 z-50 bg-black text-white flex flex-col items-center justify-center select-none overflow-hidden font-sans">
-      
-      {/* Top Floating Controls Bar */}
-      <header className="absolute top-0 left-0 right-0 z-30 p-4 sm:p-6 bg-gradient-to-b from-black/90 via-black/50 to-transparent flex items-center justify-between pointer-events-auto">
-        
-        {/* Back Button */}
-        {onClose && (
+    <div className="fixed inset-0 z-50 bg-[#0C0A09] text-white flex flex-col items-center justify-between select-none overflow-hidden font-sans">
+      {/* 1. Clean Top Header */}
+      <header className="absolute top-0 left-0 right-0 z-30 p-4 sm:p-5 bg-gradient-to-b from-black/80 via-black/40 to-transparent flex items-center justify-between pointer-events-auto">
+        {onClose ? (
           <button
             onClick={() => {
               soundService.playTap();
@@ -625,131 +635,122 @@ export const CameraStudioView: React.FC<CameraStudioViewProps> = ({
             <ArrowLeft className="w-4 h-4 stroke-[2.5]" />
             <span>Voltar</span>
           </button>
+        ) : (
+          <div />
         )}
 
-        {/* Live Status Badges (Holistic Vision: Hands, Face, Pose) */}
-        <div className="flex items-center gap-2">
-          {isModelLoading ? (
-            <div className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-black/60 border border-white/10 text-[11px] font-bold text-amber-400 backdrop-blur-md">
-              <Loader2 className="w-3.5 h-3.5 animate-spin" />
-              <span>Iniciando IA Holistic EasyLib...</span>
-            </div>
-          ) : (
-            <div className="flex items-center gap-1.5 flex-wrap">
-              {/* Hands */}
-              <div className={`flex items-center gap-1 px-2.5 py-1 rounded-xl text-[11px] font-black backdrop-blur-md border ${
-                handsDetectedCount > 0 ? 'bg-orange-950/80 border-orange-500/50 text-orange-400' : 'bg-black/50 border-white/10 text-stone-500'
-              }`}>
-                <Hand className="w-3.5 h-3.5" />
-                <span>{handsDetectedCount > 0 ? `${handsDetectedCount} Mão(s)` : 'Sem Mãos'}</span>
-              </div>
-
-              {/* Pose / Height */}
-              <div className={`flex items-center gap-1 px-2.5 py-1 rounded-xl text-[11px] font-black backdrop-blur-md border ${
-                poseDetected ? 'bg-amber-950/80 border-amber-500/50 text-amber-400' : 'bg-black/50 border-white/10 text-stone-500'
-              }`}>
-                <User className="w-3.5 h-3.5" />
-                <span>{poseDetected ? 'Corpo / Altura PA' : 'Sem Pose'}</span>
-              </div>
-
-              {/* Face NMF */}
-              <div className={`flex items-center gap-1 px-2.5 py-1 rounded-xl text-[11px] font-black backdrop-blur-md border ${
-                faceDetected ? 'bg-emerald-950/80 border-emerald-500/50 text-emerald-400' : 'bg-black/50 border-white/10 text-stone-500'
-              }`}>
-                <Smile className="w-3.5 h-3.5" />
-                <span>{faceDetected ? 'NMF Facial' : 'Sem Rosto'}</span>
-              </div>
-            </div>
-          )}
+        {/* Engine Status Indicator */}
+        <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-black/65 backdrop-blur-md border border-white/15 text-xs font-bold">
+          <span
+            className={`w-2 h-2 rounded-full ${
+              isModelLoading
+                ? 'bg-amber-400 animate-pulse'
+                : cameraActive && isTranslating
+                ? 'bg-emerald-400 animate-pulse'
+                : 'bg-stone-500'
+            }`}
+          />
+          <span className="text-stone-200">
+            {isModelLoading
+              ? 'Carregando Holistic...'
+              : trackingEngineMode === 'holistic'
+              ? 'Holistic (Mãos+Corpo+Face)'
+              : 'Multimodal (Mãos+Corpo+Face)'}
+          </span>
         </div>
 
-        {/* Quick Camera Action Controls */}
+        {/* Camera & Threshold Calibration Controls */}
         <div className="flex items-center gap-2">
-          
-          {/* Toggle Pose Skeleton */}
           <button
             onClick={() => {
               soundService.playTap();
-              setShowPoseSkeleton((prev) => !prev);
+              setShowCalibration((prev) => !prev);
             }}
-            title={showPoseSkeleton ? 'Ocultar esqueleto corporal' : 'Exibir esqueleto corporal'}
-            className={`p-2.5 sm:p-3 rounded-2xl border font-black text-xs backdrop-blur-md transition-all cursor-pointer shadow-lg active:scale-95 ${
-              showPoseSkeleton
-                ? 'bg-[#FF6B00] text-white border-[#EA580C]'
-                : 'bg-black/60 hover:bg-black/80 text-stone-400 border-white/20'
-            }`}
-          >
-            <User className="w-4 h-4 sm:w-5 sm:h-5" />
-          </button>
-
-          {/* Toggle Hand Skeleton */}
-          <button
-            onClick={() => {
-              soundService.playTap();
-              setShowHandSkeleton((prev) => !prev);
-            }}
-            title={showHandSkeleton ? 'Ocultar esqueleto das mãos' : 'Exibir esqueleto das mãos'}
-            className={`p-2.5 sm:p-3 rounded-2xl border font-black text-xs backdrop-blur-md transition-all cursor-pointer shadow-lg active:scale-95 ${
-              showHandSkeleton
-                ? 'bg-[#FF6B00] text-white border-[#EA580C]'
-                : 'bg-black/60 hover:bg-black/80 text-stone-400 border-white/20'
-            }`}
-          >
-            <Hand className="w-4 h-4 sm:w-5 sm:h-5" />
-          </button>
-
-          {/* Toggle Face Mesh */}
-          <button
-            onClick={() => {
-              soundService.playTap();
-              setShowFaceMesh((prev) => !prev);
-            }}
-            title={showFaceMesh ? 'Ocultar malha facial (NMF)' : 'Exibir malha facial (NMF)'}
-            className={`p-2.5 sm:p-3 rounded-2xl border font-black text-xs backdrop-blur-md transition-all cursor-pointer shadow-lg active:scale-95 ${
-              showFaceMesh
-                ? 'bg-[#FF6B00] text-white border-[#EA580C]'
-                : 'bg-black/60 hover:bg-black/80 text-stone-400 border-white/20'
-            }`}
-          >
-            <Smile className="w-4 h-4 sm:w-5 sm:h-5" />
-          </button>
-
-          {/* Toggle Mirror */}
-          <button
-            onClick={handleToggleMirror}
-            title="Espelhar Imagem"
-            className={`p-2.5 sm:p-3 rounded-2xl border font-black text-xs backdrop-blur-md transition-all cursor-pointer shadow-lg active:scale-95 ${
-              isMirrored
-                ? 'bg-[#FF6B00] text-white border-[#EA580C]'
+            title="Calibrar Confiança & Hold"
+            className={`p-2.5 rounded-2xl border backdrop-blur-md cursor-pointer transition-all active:scale-95 ${
+              showCalibration
+                ? 'bg-[#FF6B00] text-white border-[#FF6B00]'
                 : 'bg-black/60 hover:bg-black/80 text-white border-white/20'
             }`}
           >
-            <FlipHorizontal className="w-4 h-4 sm:w-5 sm:h-5" />
+            <SlidersHorizontal className="w-4 h-4" />
           </button>
 
-          {/* Switch Facing Mode (Front / Back) */}
           <button
-            onClick={handleSwitchCamera}
+            onClick={() => {
+              soundService.playTap();
+              setIsMirrored((prev) => !prev);
+            }}
+            title="Espelhar Câmera"
+            className="p-2.5 rounded-2xl bg-black/60 hover:bg-black/80 text-white border border-white/20 backdrop-blur-md cursor-pointer transition-all active:scale-95"
+          >
+            <FlipHorizontal className="w-4 h-4" />
+          </button>
+
+          <button
+            onClick={() => {
+              soundService.playTap();
+              setFacingMode((prev) => (prev === 'user' ? 'environment' : 'user'));
+            }}
             title="Trocar Câmera"
-            className="p-2.5 sm:p-3 rounded-2xl bg-black/60 hover:bg-black/80 text-white border border-white/20 font-black text-xs backdrop-blur-md transition-all cursor-pointer shadow-lg active:scale-95"
+            className="p-2.5 rounded-2xl bg-black/60 hover:bg-black/80 text-white border border-white/20 backdrop-blur-md cursor-pointer transition-all active:scale-95"
           >
-            <RefreshCw className="w-4 h-4 sm:w-5 sm:h-5" />
-          </button>
-
-          {/* Toggle Fullscreen */}
-          <button
-            onClick={toggleFullscreen}
-            title="Tela Cheia"
-            className="p-2.5 sm:p-3 rounded-2xl bg-black/60 hover:bg-black/80 text-white border border-white/20 font-black text-xs backdrop-blur-md transition-all cursor-pointer shadow-lg active:scale-95"
-          >
-            {isFullscreen ? <Minimize2 className="w-4 h-4 sm:w-5 sm:h-5" /> : <Maximize2 className="w-4 h-4 sm:w-5 sm:h-5" />}
+            <RefreshCw className="w-4 h-4" />
           </button>
         </div>
       </header>
 
-      {/* Main Full-Screen Video & Overlays Canvas */}
-      <div className="relative w-full h-full flex items-center justify-center bg-[#0C0A09]">
-        {/* Video Element */}
+      {/* Optional Compact Calibration Drawer */}
+      {showCalibration && (
+        <div className="absolute top-20 right-4 z-40 w-72 bg-[#1C1917]/95 backdrop-blur-xl border border-white/20 rounded-2xl p-4 shadow-2xl space-y-3 text-xs">
+          <div className="flex items-center justify-between">
+            <span className="font-black uppercase tracking-wider text-[#FF6B00]">
+              Calibração do Reconhecimento
+            </span>
+            <button
+              onClick={() => setShowCalibration(false)}
+              className="text-stone-400 hover:text-white cursor-pointer"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+
+          <div className="space-y-1">
+            <div className="flex justify-between font-bold">
+              <span>Limite mínimo de confiança</span>
+              <span className="text-[#FF6B00]">{confidenceThreshold}%</span>
+            </div>
+            <input
+              type="range"
+              min={60}
+              max={90}
+              step={1}
+              value={confidenceThreshold}
+              onChange={(e) => setConfidenceThreshold(Number(e.target.value))}
+              className="w-full accent-[#FF6B00]"
+            />
+          </div>
+
+          <div className="space-y-1">
+            <div className="flex justify-between font-bold">
+              <span>Tempo Hold-to-Confirm</span>
+              <span className="text-[#FF6B00]">{holdDurationMs} ms</span>
+            </div>
+            <input
+              type="range"
+              min={350}
+              max={1200}
+              step={50}
+              value={holdDurationMs}
+              onChange={(e) => setHoldDurationMs(Number(e.target.value))}
+              className="w-full accent-[#FF6B00]"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* 2. Full-Screen Video & Multimodal Canvas */}
+      <div className="relative w-full flex-1 flex items-center justify-center bg-black overflow-hidden">
         <video
           ref={videoRef}
           autoPlay
@@ -760,7 +761,6 @@ export const CameraStudioView: React.FC<CameraStudioViewProps> = ({
           }`}
         />
 
-        {/* Overlay Landmarks Canvas */}
         <canvas
           ref={canvasRef}
           className={`absolute inset-0 w-full h-full object-cover pointer-events-none transition-transform duration-200 ${
@@ -768,113 +768,80 @@ export const CameraStudioView: React.FC<CameraStudioViewProps> = ({
           }`}
         />
 
-        {/* Right Floating Height Scale Meter (Medidor de Altura do Ponto de Articulação) */}
-        <aside className="absolute right-4 top-24 bottom-28 w-14 sm:w-16 z-20 flex flex-col justify-between py-2 px-1 rounded-3xl bg-black/70 backdrop-blur-xl border border-white/15 text-[10px] font-black items-center pointer-events-none shadow-2xl">
-          
-          <div className="text-[9px] text-amber-400 uppercase tracking-tighter text-center leading-none mb-1">
-            ALTURA DO SINAL
-          </div>
+        {/* Recognized Sign Preview + Circular Hold-to-Confirm Ring */}
+        {isTranslating && evaluation.status === 'recognized' && evaluation.sign && (
+          <div className="absolute top-20 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 px-5 py-3 rounded-3xl bg-black/85 border-2 border-[#FF6B00] backdrop-blur-xl shadow-2xl animate-fade-in pointer-events-none max-w-[92vw]">
+            <div className="relative w-11 h-11 flex items-center justify-center shrink-0">
+              <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
+                <circle cx="18" cy="18" r="15" className="stroke-white/20 fill-none" strokeWidth="3" />
+                <circle
+                  cx="18"
+                  cy="18"
+                  r="15"
+                  className="stroke-[#FF6B00] fill-none transition-all duration-75 ease-out"
+                  strokeWidth="3"
+                  strokeDasharray="94.2"
+                  strokeDashoffset={94.2 - (94.2 * holdProgress) / 100}
+                  strokeLinecap="round"
+                />
+              </svg>
+              <span className="absolute text-lg">{evaluation.sign.icon}</span>
+            </div>
 
-          {/* Zones */}
-          <div className={`w-full py-2 rounded-xl flex flex-col items-center transition-all ${
-            currentSignHeight === 'topo_cabeca_testa' ? 'bg-amber-500 text-white shadow-lg scale-110 font-bold' : 'text-stone-400 opacity-60'
-          }`}>
-            <span className="text-xs">🧠</span>
-            <span className="text-[8px]">Testa</span>
-          </div>
-
-          <div className={`w-full py-2 rounded-xl flex flex-col items-center transition-all ${
-            currentSignHeight === 'olhos_tempora' ? 'bg-sky-500 text-white shadow-lg scale-110 font-bold' : 'text-stone-400 opacity-60'
-          }`}>
-            <span className="text-xs">👁️</span>
-            <span className="text-[8px]">Olhos</span>
-          </div>
-
-          <div className={`w-full py-2 rounded-xl flex flex-col items-center transition-all ${
-            currentSignHeight === 'boca_queixo' ? 'bg-rose-500 text-white shadow-lg scale-110 font-bold' : 'text-stone-400 opacity-60'
-          }`}>
-            <span className="text-xs">👄</span>
-            <span className="text-[8px]">Boca</span>
-          </div>
-
-          <div className={`w-full py-2 rounded-xl flex flex-col items-center transition-all ${
-            currentSignHeight === 'peito_tronco' ? 'bg-orange-500 text-white shadow-lg scale-110 font-bold' : 'text-stone-400 opacity-60'
-          }`}>
-            <span className="text-xs">🫁</span>
-            <span className="text-[8px]">Peito</span>
-          </div>
-
-          <div className={`w-full py-2 rounded-xl flex flex-col items-center transition-all ${
-            currentSignHeight === 'espaco_neutro' ? 'bg-emerald-500 text-white shadow-lg scale-110 font-bold' : 'text-stone-400 opacity-60'
-          }`}>
-            <span className="text-xs">🌐</span>
-            <span className="text-[8px]">Neutro</span>
-          </div>
-
-          <div className={`w-full py-2 rounded-xl flex flex-col items-center transition-all ${
-            currentSignHeight === 'abaixo_cintura' ? 'bg-stone-600 text-white shadow-lg scale-110 font-bold' : 'text-stone-400 opacity-40'
-          }`}>
-            <span className="text-xs">🔽</span>
-            <span className="text-[8px]">Baixo</span>
-          </div>
-
-        </aside>
-
-        {/* Bottom Real-time Ponto de Articulação & Altura Feedback HUD */}
-        <div className="absolute bottom-4 left-4 right-20 sm:right-24 z-30 max-w-xl mx-auto p-3.5 sm:p-4 rounded-3xl backdrop-blur-xl border-2 shadow-2xl flex flex-col sm:flex-row items-center gap-3.5 animate-slide-up bg-black/85 border-[#FF6B00]">
-          
-          <div className={`w-12 h-12 rounded-2xl flex items-center justify-center text-2xl shrink-0 bg-gradient-to-br ${currentHeightInfo.color} text-white shadow-md`}>
-            {currentHeightInfo.icon}
-          </div>
-
-          <div className="flex-1 space-y-1 text-center sm:text-left">
-            <div className="flex items-center justify-center sm:justify-start gap-2">
-              <span className="font-black text-xs uppercase tracking-wider text-[#FF6B00]">
-                Ponto de Articulação (PA) • Altura
+            <div className="flex flex-col min-w-0">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <span className="text-[10px] uppercase font-black tracking-wider text-[#FF6B00]">
+                  {holdProgress >= 100 ? 'Sinal Registrado!' : 'Segure para confirmar...'}
+                </span>
+                <span className="text-[10px] font-black text-emerald-300 bg-emerald-950/80 px-1.5 py-0.5 rounded-full border border-emerald-500/40">
+                  {evaluation.confidence}% conf.
+                </span>
+              </div>
+              <span className="text-sm font-black text-white truncate">
+                {evaluation.sign.name}
               </span>
-              {heightConfidence > 0 && (
-                <span className="text-[10px] font-bold text-amber-300 bg-amber-950/60 px-2 py-0.5 rounded-full border border-amber-500/30">
-                  {heightConfidence}% Precisão
+              {evaluation.nmfDetected !== 'neutral' && (
+                <span className="text-[10px] text-amber-300 font-semibold">
+                  NMF: {NMF_LABELS[evaluation.nmfDetected]}
                 </span>
               )}
             </div>
 
-            <h4 className="font-black text-base text-white flex items-center justify-center sm:justify-start gap-1.5">
-              <span>{currentHeightInfo.label}</span>
-            </h4>
-
-            <p className="text-[11px] text-stone-300 font-medium leading-tight">
-              {currentHeightInfo.desc}
-            </p>
-
-            {/* Matching signs for this height zone */}
-            {currentHeightInfo.signs.length > 0 && (
-              <div className="pt-1 flex flex-wrap gap-1.5 justify-center sm:justify-start">
-                <span className="text-[10px] font-black text-stone-400">Exemplos de sinais:</span>
-                {currentHeightInfo.signs.map((sign, i) => (
-                  <span key={i} className="px-2 py-0.5 rounded-md bg-white/10 text-white font-mono text-[10px] font-bold border border-white/10">
-                    {sign}
-                  </span>
-                ))}
-              </div>
-            )}
+            <div className="ml-1 w-11 text-right shrink-0">
+              <span className="text-xs font-black text-[#FF6B00]">{holdProgress}%</span>
+            </div>
           </div>
+        )}
 
-        </div>
+        {/* Below-Threshold Warning Pill (Never invents translation!) */}
+        {isTranslating && evaluation.status === 'below_threshold' && (
+          <div className="absolute top-20 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-black/85 border border-amber-500/60 backdrop-blur-xl shadow-xl pointer-events-none max-w-[92vw]">
+            <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
+            <div className="flex flex-col min-w-0">
+              <span className="text-xs font-black text-amber-300">
+                Sinal não reconhecido ({evaluation.confidence}% &lt; {confidenceThreshold}%)
+              </span>
+              <span className="text-[11px] text-stone-300 truncate">
+                {evaluation.topCandidate?.failureReason || 'Repita o sinal diante da câmera.'}
+              </span>
+            </div>
+          </div>
+        )}
 
-        {/* Camera Inactive / Permission Prompt */}
+        {/* Inactive Camera / Permission Overlay */}
         {!cameraActive && (
           <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-black/90 space-y-4 z-20">
             <div className="w-20 h-20 rounded-3xl bg-[#FF6B00]/20 border-2 border-[#FF6B00]/40 flex items-center justify-center text-[#FF6B00] animate-pulse">
               <Camera className="w-10 h-10" />
             </div>
-            
+
             <div className="space-y-1 max-w-md">
               <h2 className="text-xl sm:text-2xl font-black text-white">
-                Câmera com Rastreamento Corporal & Altura dos Sinais
+                Reconhecimento Multimodal de Libras
               </h2>
               <p className="text-sm text-stone-300">
-                {cameraError || 'Iniciando câmera para rastrear mãos, postura, expressões faciais e altura do ponto de articulação em Libras...'}
+                {cameraError ||
+                  'Ative a câmera para detectar sinais isolados com análise de mãos, corpo, expressão facial e movimento temporal.'}
               </p>
             </div>
 
@@ -882,13 +849,219 @@ export const CameraStudioView: React.FC<CameraStudioViewProps> = ({
               onClick={startCamera}
               className="px-6 py-3.5 rounded-2xl bg-[#FF6B00] hover:bg-[#EA580C] text-white font-black text-sm uppercase tracking-wider border-b-4 border-[#9A3412] cursor-pointer shadow-xl transition-all active:translate-y-0.5"
             >
-              Permitir e Ligar Câmera
+              Ligar Câmera e Iniciar
             </button>
           </div>
         )}
-
       </div>
 
+      {/* 3. DEDICATED TRANSLATION & CORRECTION CONSOLE */}
+      <footer className="w-full z-40 bg-[#141210]/95 backdrop-blur-2xl border-t-2 border-white/10 px-4 py-3.5 sm:px-6 sm:py-4 flex flex-col gap-2.5 shadow-2xl">
+        {/* Top bar */}
+        <div className="flex items-center justify-between gap-2 flex-wrap">
+          <div className="flex items-center gap-2">
+            <Sparkles className="w-4 h-4 text-[#FF6B00]" />
+            <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-white">
+              Sinais Reconhecidos → Português
+            </h3>
+            <span className="text-[10px] font-bold bg-white/10 text-stone-300 px-2 py-0.5 rounded-full">
+              Sinais Isolados
+            </span>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                soundService.playTap();
+                setIsTranslating((prev) => !prev);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-stone-300 font-bold text-xs cursor-pointer transition-all active:scale-95"
+            >
+              {isTranslating ? (
+                <Pause className="w-3.5 h-3.5" />
+              ) : (
+                <Play className="w-3.5 h-3.5 text-emerald-400" />
+              )}
+              <span className="hidden sm:inline">{isTranslating ? 'Pausar' : 'Continuar'}</span>
+            </button>
+
+            <button
+              onClick={() => {
+                soundService.playTap();
+                setShowSignsGuide((prev) => !prev);
+              }}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-stone-300 font-bold text-xs cursor-pointer transition-all active:scale-95"
+            >
+              <Info className="w-3.5 h-3.5 text-[#FF6B00]" />
+              <span className="hidden sm:inline">Sinais / Correção</span>
+              {showSignsGuide ? (
+                <ChevronDown className="w-3.5 h-3.5" />
+              ) : (
+                <ChevronUp className="w-3.5 h-3.5" />
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Interactive Sequence Chips (click to replace manually, X to remove) */}
+        {signSequence.length > 0 && (
+          <div className="flex items-center gap-2 overflow-x-auto py-1 no-scrollbar">
+            <span className="text-[11px] font-bold text-stone-400 shrink-0">Glosas:</span>
+            {signSequence.map((s, idx) => {
+              const isEditing = editingIndex === idx;
+              return (
+                <div
+                  key={`${s.id}-${idx}`}
+                  className={`flex items-center gap-1.5 px-2.5 py-1 rounded-xl border text-xs font-black shrink-0 transition-all ${
+                    isEditing
+                      ? 'bg-[#FF6B00] border-white text-white'
+                      : 'bg-black/50 border-[#FF6B00]/40 text-[#FFEDD5]'
+                  }`}
+                >
+                  <button
+                    onClick={() => {
+                      soundService.playTap();
+                      setEditingIndex(isEditing ? null : idx);
+                      setShowSignsGuide(true);
+                    }}
+                    title="Clique para corrigir este sinal manualmente"
+                    className="flex items-center gap-1 cursor-pointer"
+                  >
+                    <span>{s.icon}</span>
+                    <span>{s.gloss}</span>
+                  </button>
+                  <button
+                    onClick={() => handleRemoveAtIndex(idx)}
+                    title="Remover sinal"
+                    className="text-stone-400 hover:text-rose-400 cursor-pointer ml-0.5"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* Output Box: Literal vs Contextual Suggestion */}
+        <div className="bg-black/60 rounded-2xl border border-white/15 p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-inner">
+          <div className="flex-1 space-y-1 min-w-0">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[10px] font-black uppercase tracking-wider text-stone-400">
+                {translationOutput.contextualSuggestion
+                  ? 'Sugestão Contextual em Português:'
+                  : 'Mapeamento Literal dos Sinais:'}
+              </span>
+              {translationOutput.contextualSuggestion && (
+                <span className="text-[10px] text-amber-300 font-bold">
+                  (Literal: {translationOutput.literalPortuguese})
+                </span>
+              )}
+            </div>
+
+            <p
+              className={`text-base sm:text-lg font-black leading-snug break-words ${
+                signSequence.length > 0 ? 'text-white' : 'text-stone-400 italic font-medium'
+              }`}
+            >
+              "{activeSpeechText}"
+            </p>
+
+            <p className="text-[10px] text-stone-400 leading-tight">
+              {translationOutput.methodologyNotice}
+            </p>
+          </div>
+
+          {/* Action buttons: Speak, Copy, Undo Last, Clear */}
+          <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
+            <button
+              onClick={handleSpeak}
+              disabled={signSequence.length === 0}
+              title="Ouvir em voz alta"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#FF6B00] hover:bg-[#EA580C] text-white font-black text-xs cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95 shadow-md"
+            >
+              <Volume2 className="w-4 h-4" />
+              <span className="hidden sm:inline">Ouvir</span>
+            </button>
+
+            <button
+              onClick={handleCopy}
+              disabled={signSequence.length === 0}
+              title="Copiar texto"
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white font-black text-xs border border-white/15 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95"
+            >
+              {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
+              <span className="hidden sm:inline">{copied ? 'Copiado' : 'Copiar'}</span>
+            </button>
+
+            <button
+              onClick={handleUndoLast}
+              disabled={signSequence.length === 0}
+              title="Apagar último sinal"
+              className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-stone-200 border border-white/15 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95"
+            >
+              <Delete className="w-4 h-4" />
+            </button>
+
+            <button
+              onClick={handleClear}
+              disabled={signSequence.length === 0}
+              title="Limpar frase"
+              className="p-2 rounded-xl bg-white/10 hover:bg-rose-950/40 text-stone-300 hover:text-rose-400 border border-white/15 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+
+        {/* Collapsible Sign Bank Reference & Manual Correction Grid */}
+        {showSignsGuide && (
+          <div className="bg-black/85 rounded-2xl border border-white/15 p-3.5 space-y-2.5 max-h-52 overflow-y-auto no-scrollbar animate-fade-in">
+            <div className="flex items-center justify-between gap-2 flex-wrap">
+              <span className="text-[11px] font-black uppercase text-stone-200 flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                <span>
+                  {editingIndex !== null
+                    ? `Selecione o sinal correto para substituir #${editingIndex + 1}:`
+                    : 'Banco de Sinais (Clique para inserir/corrigir):'}
+                </span>
+              </span>
+              <span className="text-[10px] text-stone-400">
+                Fontes: SignBank UFSC / Spread the Sign / INES
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+              {LIBRAS_SIGN_DATABASE.map((spec) => {
+                const isValidated = spec.validationStatus === 'validated';
+                return (
+                  <button
+                    key={spec.id}
+                    onClick={() => handleManualPickSign(toRecognizedSign(spec))}
+                    className="flex items-center gap-2 p-2 rounded-xl bg-white/5 hover:bg-[#FF6B00]/20 hover:border-[#FF6B00]/50 border border-white/10 text-left transition-all cursor-pointer group"
+                  >
+                    <span className="text-xl group-hover:scale-110 transition-transform">
+                      {spec.icon}
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-black text-white truncate">{spec.name}</div>
+                      <div className="flex items-center gap-1 text-[9px] font-bold">
+                        <span
+                          className={
+                            isValidated ? 'text-emerald-400' : 'text-amber-400'
+                          }
+                        >
+                          {isValidated ? 'Validado' : 'Pendente validação'}
+                        </span>
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+      </footer>
     </div>
   );
 };

@@ -32,6 +32,14 @@ export interface SignData {
   visualGlyph: string;         // Descriptive graphic emoji or visual symbol
   svgPathType?: 'hand_l' | 'hand_open' | 'hand_fist' | 'hand_pointing' | 'hand_v' | 'hand_b' | 'hand_y' | 'hand_c' | 'hand_i' | 'hand_ily';
   isFavorite?: boolean;
+  realImageUrl?: string;       // Authentic photograph of the real signer performing the sign (only if verified)
+  realVideoUrl?: string;       // Real video demonstration of the sign (only if verified & sign-specific)
+  photoSteps?: { title: string; imageUrl: string; instruction: string }[];
+  demonstratorName?: string;
+  linguisticSourceName?: string;
+  linguisticSourceUrl?: string;
+  videoReferenceUrl?: string;
+  validationStatus?: 'validated' | 'pending_validation';
 }
 
 export interface MatchPair {
@@ -41,6 +49,7 @@ export interface MatchPair {
   signGlyph: string;
   handshape: string;
   portugueseText: string;
+  realImageUrl?: string;
 }
 
 export interface StoryDialogueLine {
@@ -49,6 +58,7 @@ export interface StoryDialogueLine {
   librasSentence: string;      // In gloss format: "OI! TUDO-BEM?"
   portugueseSentence: string;  // "Olá! Como vai você?"
   signExplanation?: string;
+  realImageUrl?: string;
   questionAfter?: {
     prompt: string;
     options: string[];
@@ -65,12 +75,15 @@ export interface Exercise {
   portugueseSentence?: string; // "Meu nome é Maria"
   wordBank?: string[];
   correctAnswers: string[];
+  realImageUrl?: string;
+  realVideoUrl?: string;
   options?: { 
     id: string; 
     text: string; 
     glyph?: string; 
     handshape?: string;
     explanation?: string;
+    realImageUrl?: string;
   }[];
   matchPairs?: MatchPair[];
   storyLines?: StoryDialogueLine[];

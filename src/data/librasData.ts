@@ -49,42 +49,54 @@ export const LIBRAS_DICTIONARY: SignData[] = [
     name: 'Oi / Olá',
     category: 'Saudações',
     meaning: 'Cumprimento informal padrão em Libras.',
-    handshapeName: "Mão em 'O' seguido de 'I'",
+    handshapeName: "Mão em 'O' seguido de 'I' ou aceno aberto na altura do ombro",
     handshapeIcon: '👋',
     bodyLocation: 'Espaço neutro à frente do ombro',
-    movementType: 'Movimento circular suave do dedo mindinho ou movimento de abano',
+    movementType: 'Movimento oscilatório lateral suave ou rotação com dedo mínimo estendido',
     facialExpression: 'Expressão amigável e sorriso natural',
-    description: 'Faça a configuração da letra O e estenda o dedo mínimo (I), fazendo um pequeno movimento circular ou aceno.',
+    description: 'Faça o aceno lateral com a mão aberta na altura do ombro ou a configuração da letra O estendendo o dedo mínimo (I).',
     visualGlyph: '👋',
-    svgPathType: 'hand_i'
+    svgPathType: 'hand_i',
+    linguisticSourceName: 'Spread the Sign (Português Brasileiro - Libras)',
+    linguisticSourceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=oi',
+    videoReferenceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=oi',
+    validationStatus: 'validated'
   },
   {
     id: 'sign_tudo_bem',
     name: 'Tudo Bem?',
     category: 'Saudações',
     meaning: 'Pergunta ou confirmação sobre o estado da pessoa.',
-    handshapeName: "Sinal de BOM + sinal de POSITIVO 👍",
+    handshapeName: "Sinal de BOM (queixo) + sinal de POSITIVO 👍",
     handshapeIcon: '👍',
     bodyLocation: 'Boca / Queixo -> Espaço neutro',
     movementType: 'Tocar a boca com a mão fechada, abrir em frente ao peito e levantar o polegar',
     facialExpression: 'Interrogativa: sobrancelhas levantadas e cabeça levemente inclinada',
-    description: 'Com a mão em frente à boca, abra a mão para frente e finalize com a mão em joinha.',
+    description: 'Com a mão em frente à boca, abra a mão para frente e finalize com o polegar estendido para cima.',
     visualGlyph: '👍',
-    svgPathType: 'hand_open'
+    svgPathType: 'hand_open',
+    linguisticSourceName: 'INES / Spread the Sign (PT-BR)',
+    linguisticSourceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=tudo+bem',
+    videoReferenceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=tudo+bem',
+    validationStatus: 'validated'
   },
   {
     id: 'sign_bom_dia',
     name: 'Bom Dia',
     category: 'Saudações',
     meaning: 'Saudação matinal.',
-    handshapeName: "Sinal de BOM + sinal de DIA",
+    handshapeName: "Sinal composto: BOM + DIA (mão em 'D')",
     handshapeIcon: '🌅',
     bodyLocation: 'Boca -> Têmpora / Espaço neutro',
     movementType: 'Mão na boca abrindo para frente, depois letra D partindo da têmpora em semicírculo',
     facialExpression: 'Sorriso acolhedor',
     description: 'Sinalize BOM (mão na boca abrindo) e depois a letra D girando como o sol nascendo.',
     visualGlyph: '🌅',
-    svgPathType: 'hand_pointing'
+    svgPathType: 'hand_pointing',
+    linguisticSourceName: 'INES — Dicionário de Libras',
+    linguisticSourceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=bom+dia',
+    videoReferenceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=bom+dia',
+    validationStatus: 'pending_validation'
   },
   {
     id: 'sign_boa_tarde',
@@ -98,7 +110,11 @@ export const LIBRAS_DICTIONARY: SignData[] = [
     facialExpression: 'Simpática',
     description: 'Faça BOM e depois desça a mão aberta sobre o antebraço oposto.',
     visualGlyph: '☀️',
-    svgPathType: 'hand_open'
+    svgPathType: 'hand_open',
+    linguisticSourceName: 'Spread the Sign (PT-BR)',
+    linguisticSourceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=boa+tarde',
+    videoReferenceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=boa+tarde',
+    validationStatus: 'pending_validation'
   },
   {
     id: 'sign_boa_noite',
@@ -112,21 +128,29 @@ export const LIBRAS_DICTIONARY: SignData[] = [
     facialExpression: 'Tranquila',
     description: 'Faça BOM e cubra suavemente uma mão com a outra em concha.',
     visualGlyph: '🌙',
-    svgPathType: 'hand_open'
+    svgPathType: 'hand_open',
+    linguisticSourceName: 'Spread the Sign (PT-BR)',
+    linguisticSourceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=boa+noite',
+    videoReferenceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=boa+noite',
+    validationStatus: 'pending_validation'
   },
   {
     id: 'sign_obrigado',
     name: 'Obrigado(a)',
     category: 'Cortesia',
     meaning: 'Expressão de agradecimento e gratidão.',
-    handshapeName: "Mão aberta em 'B' ou espalmada na testa e no peito",
+    handshapeName: "Mão espalmada em 'B' na testa/queixo projetando-se para frente",
     handshapeIcon: '🙏',
-    bodyLocation: 'Testa e Peito',
-    movementType: 'Uma mão toca a testa e a outra o peito, projetando-se suavemente para frente',
+    bodyLocation: 'Testa / Queixo -> Espaço Neutro',
+    movementType: 'A ponta dos dedos toca a testa (ou queixo) e projeta-se para frente em direção ao interlocutor',
     facialExpression: 'Expressão de gratidão sincera com leve inclinação de cabeça',
-    description: 'Toque a testa com a ponta dos dedos de uma mão e o peito com a outra, inclinando levemente o tronco.',
+    description: 'Toque a testa com a ponta dos dedos da mão em B e projete a mão suavemente para frente.',
     visualGlyph: '🙏',
-    svgPathType: 'hand_b'
+    svgPathType: 'hand_b',
+    linguisticSourceName: 'INES / SignBank Libras (UFSC)',
+    linguisticSourceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=obrigado',
+    videoReferenceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=obrigado',
+    validationStatus: 'validated'
   },
   {
     id: 'sign_por_favor',
@@ -140,7 +164,11 @@ export const LIBRAS_DICTIONARY: SignData[] = [
     facialExpression: 'Expressão humilde e cortês',
     description: 'Una as palmas das mãos em frente ao peito ou passe a palma sobre a outra puxando para si.',
     visualGlyph: '🤲',
-    svgPathType: 'hand_open'
+    svgPathType: 'hand_open',
+    linguisticSourceName: 'Spread the Sign (PT-BR)',
+    linguisticSourceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=por+favor',
+    videoReferenceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=por+favor',
+    validationStatus: 'validated'
   },
   {
     id: 'sign_meu_nome',
@@ -154,7 +182,11 @@ export const LIBRAS_DICTIONARY: SignData[] = [
     facialExpression: 'Neutra ao afirmar; sobrancelhas erguidas ao perguntar',
     description: 'Com os dedos indicador e médio juntos em U, deslize a mão de lado em frente ao peito.',
     visualGlyph: '🏷️',
-    svgPathType: 'hand_pointing'
+    svgPathType: 'hand_pointing',
+    linguisticSourceName: 'SignBank Libras (UFSC)',
+    linguisticSourceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=nome',
+    videoReferenceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=nome',
+    validationStatus: 'pending_validation'
   },
   {
     id: 'sign_sinal_batismo',
@@ -168,7 +200,10 @@ export const LIBRAS_DICTIONARY: SignData[] = [
     facialExpression: 'Orgulho e respeito',
     description: 'O sinal de batismo é a identidade oficial da pessoa na comunidade surda.',
     visualGlyph: '✨',
-    svgPathType: 'hand_ily'
+    svgPathType: 'hand_ily',
+    linguisticSourceName: 'Corpus de Libras (UFSC)',
+    linguisticSourceUrl: 'https://corpuslibras.ufsc.br/',
+    validationStatus: 'pending_validation'
   },
   {
     id: 'sign_surdo',
@@ -178,81 +213,105 @@ export const LIBRAS_DICTIONARY: SignData[] = [
     handshapeName: "Mão em '1' ou 'D' (dedo indicador apontado)",
     handshapeIcon: '🧏',
     bodyLocation: 'Ouvido -> Boca',
-    movementType: 'Tocar a orelha e em seguida a boca com o dedo indicador',
+    movementType: 'Tocar próximo à orelha e deslocar em trajetória até a boca com o dedo indicador',
     facialExpression: 'Neutra e afirmativa',
-    description: 'Toque o ouvido com a ponta do indicador e em seguida encoste na boca.',
+    description: 'Toque a região do ouvido com a ponta do indicador e em seguida desloque até próximo à boca.',
     visualGlyph: '🧏',
-    svgPathType: 'hand_pointing'
+    svgPathType: 'hand_pointing',
+    linguisticSourceName: 'SignBank Libras (UFSC) / INES',
+    linguisticSourceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=surdo',
+    videoReferenceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=surdo',
+    validationStatus: 'validated'
   },
   {
     id: 'sign_ouvinte',
     name: 'Ouvinte',
     category: 'Identidade',
     meaning: 'Pessoa que ouve e usa a modalidade oral-auditiva.',
-    handshapeName: "Mão aberta perto da orelha fazendo movimento de onda sonora",
+    handshapeName: "Dedo indicador próximo à orelha fazendo movimento circular",
     handshapeIcon: '👂',
     bodyLocation: 'Ao lado da orelha',
     movementType: 'Dedo indicador desenha pequenos semicírculos saindo da orelha',
     facialExpression: 'Neutra',
     description: 'Coloque o indicador próximo à orelha e faça pequenos círculos para fora.',
     visualGlyph: '👂',
-    svgPathType: 'hand_pointing'
+    svgPathType: 'hand_pointing',
+    linguisticSourceName: 'Spread the Sign (PT-BR)',
+    linguisticSourceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=ouvinte',
+    videoReferenceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=ouvinte',
+    validationStatus: 'pending_validation'
   },
   {
     id: 'sign_aprender',
     name: 'Aprender',
     category: 'Educação',
     meaning: 'Adquirir conhecimento, estudar, absorver aprendizado.',
-    handshapeName: "Mão aberta fechando em punho na testa",
+    handshapeName: "Mão em 'C'/aberta fechando em punho ('S') junto à testa",
     handshapeIcon: '🧠',
     bodyLocation: 'Testa (Altura Superior)',
-    movementType: 'Mão aberta em frente à testa fecha-se rapidamente em punho tocando a mente',
+    movementType: 'Mão aberta em frente à testa fecha os dedos em direção à mente',
     facialExpression: 'Atenção e interesse',
-    description: 'Abra a mão em frente à testa e feche os dedos como se estivesse pegando uma ideia e guardando na mente.',
+    description: 'Abra a mão em frente à testa e feche os dedos como se estivesse captando o conhecimento.',
     visualGlyph: '🧠',
-    svgPathType: 'hand_fist'
+    svgPathType: 'hand_fist',
+    linguisticSourceName: 'Spread the Sign (PT-BR) / SignBank UFSC',
+    linguisticSourceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=aprender',
+    videoReferenceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=aprender',
+    validationStatus: 'validated'
   },
   {
     id: 'sign_saber',
     name: 'Saber / Conhecer',
     category: 'Cognição',
     meaning: 'Ter conhecimento ou domínio sobre algo.',
-    handshapeName: "Mão espalmada tocando a lateral da testa",
+    handshapeName: "Mão espalmada ou indicador tocando a têmpora/testa",
     handshapeIcon: '💡',
     bodyLocation: 'Testa / Têmpora',
-    movementType: 'Bater as pontas dos dedos suavemente na têmpora 2 vezes',
+    movementType: 'Toques curtos na têmpora/testa',
     facialExpression: 'Firmeza',
-    description: 'Toque a têmpora com a ponta dos quatro dedos da mão aberta.',
+    description: 'Toque a lateral da testa/têmpora com a ponta dos dedos ou indicador.',
     visualGlyph: '💡',
-    svgPathType: 'hand_open'
+    svgPathType: 'hand_open',
+    linguisticSourceName: 'SignBank Libras (UFSC) / INES',
+    linguisticSourceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=saber',
+    videoReferenceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=saber',
+    validationStatus: 'validated'
   },
   {
     id: 'sign_nao_saber',
     name: 'Não Saber',
     category: 'Cognição',
     meaning: 'Desconhecer uma informação.',
-    handshapeName: "Mão na têmpora jogando para fora",
+    handshapeName: "Mão na têmpora jogando para fora com negação",
     handshapeIcon: '🤷',
     bodyLocation: 'Testa -> Espaço Neutro',
     movementType: 'Toque a têmpora e gire a mão para fora abrindo a palma, balançando a cabeça',
     facialExpression: 'Expressão de negação e dúvida',
     description: 'Toque a têmpora e jogue a mão para fora balançando a cabeça em sinal de negação.',
     visualGlyph: '🤷',
-    svgPathType: 'hand_open'
+    svgPathType: 'hand_open',
+    linguisticSourceName: 'Spread the Sign (PT-BR)',
+    linguisticSourceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=nao+saber',
+    videoReferenceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=nao+saber',
+    validationStatus: 'pending_validation'
   },
   {
     id: 'sign_libras',
     name: 'Libras',
     category: 'Língua',
     meaning: 'Língua Brasileira de Sinais.',
-    handshapeName: "Mãos abertas com dedos entrelaçando no ar em círculos alternados",
+    handshapeName: "Duas mãos abertas alternando movimentos circulares no ar",
     handshapeIcon: '👐',
     bodyLocation: 'Espaço neutro na frente do peito',
     movementType: 'Movimento circular alternado das duas mãos sinalizando no ar',
     facialExpression: 'Entusiasmo',
-    description: 'Gire as duas mãos abertas para frente de forma alternada, simulando fluência visual.',
+    description: 'Gire as duas mãos abertas à frente do peito de forma alternada e simétrica.',
     visualGlyph: '👐',
-    svgPathType: 'hand_open'
+    svgPathType: 'hand_open',
+    linguisticSourceName: 'SignBank Libras (UFSC) / INES',
+    linguisticSourceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=libras',
+    videoReferenceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=libras',
+    validationStatus: 'validated'
   },
   {
     id: 'sign_casa',
@@ -262,11 +321,15 @@ export const LIBRAS_DICTIONARY: SignData[] = [
     handshapeName: "Mãos abertas em 'B' unidas pelas pontas formando um telhado",
     handshapeIcon: '🏠',
     bodyLocation: 'Espaço neutro na altura do peito',
-    movementType: 'Unir as pontas dos dedos das duas mãos em ângulo de 90 graus',
+    movementType: 'Unir as pontas dos dedos das duas mãos em ângulo inclinado formando um teto',
     facialExpression: 'Neutra',
     description: 'Junte as pontas dos dedos das duas mãos espalmadas formando um telhado triangular.',
     visualGlyph: '🏠',
-    svgPathType: 'hand_b'
+    svgPathType: 'hand_b',
+    linguisticSourceName: 'INES / Spread the Sign (PT-BR)',
+    linguisticSourceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=casa',
+    videoReferenceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=casa',
+    validationStatus: 'validated'
   },
   {
     id: 'sign_trabalhar',
@@ -280,21 +343,29 @@ export const LIBRAS_DICTIONARY: SignData[] = [
     facialExpression: 'Foco e determinação',
     description: 'Coloque as duas mãos em L apontadas para frente e faça movimentos rítmicos alternados.',
     visualGlyph: '💼',
-    svgPathType: 'hand_l'
+    svgPathType: 'hand_l',
+    linguisticSourceName: 'Spread the Sign (PT-BR)',
+    linguisticSourceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=trabalhar',
+    videoReferenceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=trabalhar',
+    validationStatus: 'pending_validation'
   },
   {
     id: 'sign_ajudar',
     name: 'Ajudar',
     category: 'Verbos Direcionais',
     meaning: 'Prestar auxílio, socorro ou apoio.',
-    handshapeName: "Mão em 'A' ou 'B' apoiada sobre a palma aberta e projetada na direção da pessoa",
+    handshapeName: "Mão fechada apoiada sobre a palma aberta e projetada para o receptor",
     handshapeIcon: '🤝',
     bodyLocation: 'Espaço neutro (com concordância de direção)',
     movementType: 'Mão de apoio leva a outra mão do emissor para o receptor',
     facialExpression: 'Solidariedade',
-    description: 'Apoie a mão em punho sobre a palma da outra mão e mova para frente (EU-AJUDO-VOCÊ) ou para si (VOCÊ-ME-AJUDA).',
+    description: 'Apoie uma mão fechada sobre a palma aberta da outra mão e mova na direção da pessoa ajudada.',
     visualGlyph: '🤝',
-    svgPathType: 'hand_open'
+    svgPathType: 'hand_open',
+    linguisticSourceName: 'SignBank Libras (UFSC) / INES',
+    linguisticSourceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=ajudar',
+    videoReferenceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=ajudar',
+    validationStatus: 'validated'
   },
   {
     id: 'sign_mae',
@@ -308,7 +379,11 @@ export const LIBRAS_DICTIONARY: SignData[] = [
     facialExpression: 'Carinhosa',
     description: 'Passe o polegar pelo queixo e encoste o dorso da mão nos lábios com carinho.',
     visualGlyph: '👩',
-    svgPathType: 'hand_open'
+    svgPathType: 'hand_open',
+    linguisticSourceName: 'Spread the Sign (PT-BR)',
+    linguisticSourceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=mae',
+    videoReferenceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=mae',
+    validationStatus: 'pending_validation'
   },
   {
     id: 'sign_pai',
@@ -322,7 +397,11 @@ export const LIBRAS_DICTIONARY: SignData[] = [
     facialExpression: 'Respeitosa',
     description: 'Sinalize homem (puxando o queixo) e encoste o dorso da mão na boca.',
     visualGlyph: '👨',
-    svgPathType: 'hand_c'
+    svgPathType: 'hand_c',
+    linguisticSourceName: 'Spread the Sign (PT-BR)',
+    linguisticSourceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=pai',
+    videoReferenceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=pai',
+    validationStatus: 'pending_validation'
   },
   {
     id: 'sign_filho',
@@ -336,7 +415,11 @@ export const LIBRAS_DICTIONARY: SignData[] = [
     facialExpression: 'Afetuosa',
     description: 'Puxe a mão do peito para frente, indicando algo que brotou de dentro.',
     visualGlyph: '👶',
-    svgPathType: 'hand_open'
+    svgPathType: 'hand_open',
+    linguisticSourceName: 'Spread the Sign (PT-BR)',
+    linguisticSourceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=filho',
+    videoReferenceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=filho',
+    validationStatus: 'pending_validation'
   },
   {
     id: 'sign_amigo',
@@ -350,7 +433,11 @@ export const LIBRAS_DICTIONARY: SignData[] = [
     facialExpression: 'Sorriso acolhedor',
     description: 'Bata com a palma da mão no peito esquerdo sobre o coração duas vezes.',
     visualGlyph: '💛',
-    svgPathType: 'hand_open'
+    svgPathType: 'hand_open',
+    linguisticSourceName: 'Spread the Sign (PT-BR)',
+    linguisticSourceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=amigo',
+    videoReferenceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=amigo',
+    validationStatus: 'pending_validation'
   },
   {
     id: 'sign_gostar',
@@ -364,7 +451,11 @@ export const LIBRAS_DICTIONARY: SignData[] = [
     facialExpression: 'Expressão de satisfação e prazer',
     description: 'Gire a palma da mão aberta suavemente no centro do peito.',
     visualGlyph: '😍',
-    svgPathType: 'hand_open'
+    svgPathType: 'hand_open',
+    linguisticSourceName: 'SignBank Libras (UFSC) / INES',
+    linguisticSourceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=gostar',
+    videoReferenceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=gostar',
+    validationStatus: 'validated'
   },
   {
     id: 'sign_nao_gostar',
@@ -378,7 +469,11 @@ export const LIBRAS_DICTIONARY: SignData[] = [
     facialExpression: 'Desagrado e negação',
     description: 'Passe a mão no peito e jogue para frente com cara de desagrado.',
     visualGlyph: '😒',
-    svgPathType: 'hand_open'
+    svgPathType: 'hand_open',
+    linguisticSourceName: 'Spread the Sign (PT-BR)',
+    linguisticSourceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=nao+gostar',
+    videoReferenceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=nao+gostar',
+    validationStatus: 'pending_validation'
   },
   {
     id: 'sign_desculpas',
@@ -392,7 +487,11 @@ export const LIBRAS_DICTIONARY: SignData[] = [
     facialExpression: 'Expressão de arrependimento e humildade',
     description: 'Faça a letra Y com a mão e encoste a ponta do polegar no centro do queixo.',
     visualGlyph: '🙇',
-    svgPathType: 'hand_y'
+    svgPathType: 'hand_y',
+    linguisticSourceName: 'INES / Spread the Sign (PT-BR)',
+    linguisticSourceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=desculpa',
+    videoReferenceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=desculpa',
+    validationStatus: 'pending_validation'
   },
   {
     id: 'sign_eu_te_amo',
@@ -406,7 +505,11 @@ export const LIBRAS_DICTIONARY: SignData[] = [
     facialExpression: 'Sorriso aberto e carinhoso',
     description: 'Estenda o polegar, o dedo indicador e o dedo mínimo ao mesmo tempo com a palma para frente.',
     visualGlyph: '🤟',
-    svgPathType: 'hand_ily'
+    svgPathType: 'hand_ily',
+    linguisticSourceName: 'INES / Cultura Surda (ILY)',
+    linguisticSourceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=eu+te+amo',
+    videoReferenceUrl: 'https://www.spreadthesign.com/pt.br/search/?q=eu+te+amo',
+    validationStatus: 'validated'
   }
 ];
 
@@ -1193,11 +1296,12 @@ function generateUnitNodes(unitDef: UnitDefinition): PathNode[] {
           sign: targetSign,
           correctAnswers: [targetSign.name, targetSign.name.toLowerCase()],
           options: [
-            { id: 'opt_1', text: targetSign.name, glyph: targetSign.visualGlyph, explanation: targetSign.meaning },
+            { id: 'opt_1', text: targetSign.name, glyph: targetSign.visualGlyph, realImageUrl: targetSign.realImageUrl, explanation: targetSign.meaning },
             ...otherSigns.map((os, idx) => ({
               id: `opt_${idx+2}`,
               text: os.name,
               glyph: os.visualGlyph,
+              realImageUrl: os.realImageUrl,
               explanation: os.meaning
             }))
           ].sort(() => 0.5 - Math.random()),
@@ -1226,7 +1330,7 @@ function generateUnitNodes(unitDef: UnitDefinition): PathNode[] {
           grammarTip: `Estrutura Libras: ${unitDef.grammarExplanation}`
         });
       } else if (e === 3) {
-        // Match pairs
+        // Match pairs with real photography
         const pairs: MatchPair[] = [
           targetSign,
           ...otherSigns
@@ -1236,7 +1340,8 @@ function generateUnitNodes(unitDef: UnitDefinition): PathNode[] {
           signName: s.name,
           signGlyph: s.visualGlyph,
           handshape: s.handshapeName,
-          portugueseText: s.name
+          portugueseText: s.name,
+          realImageUrl: s.realImageUrl
         }));
 
         exercises.push({

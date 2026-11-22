@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Play, RotateCcw, Info, Eye, Sparkles } from 'lucide-react';
+import { Info, ExternalLink, Hand, MapPin, Move, Smile, CheckCircle2, AlertTriangle } from 'lucide-react';
 import { SignData } from '../types';
+import { LIBRAS_SIGN_DATABASE } from '../data/librasSignDatabase';
 
 interface LibrasHandSignProps {
   sign?: SignData;
@@ -17,65 +18,79 @@ export const LibrasHandSign: React.FC<LibrasHandSignProps> = ({
   size = 'md',
   showDetails = false,
   showParameters = false,
-  isAnimated = true,
-  className = '',
-  onPlaySign
+  className = ''
 }) => {
-  const [isPlaying, setIsPlaying] = useState(false);
   const [activeTab, setActiveTab] = useState<'visual' | 'params'>('visual');
 
   if (!sign) {
     return (
-      <div className={`flex flex-col items-center justify-center p-6 bg-slate-100 rounded-2xl border-2 border-dashed border-slate-300 text-slate-400 ${className}`}>
+      <div
+        className={`flex flex-col items-center justify-center p-6 bg-slate-100 rounded-2xl border-2 border-dashed border-slate-300 text-slate-400 ${className}`}
+      >
         <span className="text-4xl mb-2">🤟</span>
         <span className="text-sm font-semibold">Sinal em Libras</span>
       </div>
     );
   }
 
-  const triggerAnimation = () => {
-    setIsPlaying(true);
-    if (onPlaySign) onPlaySign();
-    setTimeout(() => {
-      setIsPlaying(false);
-    }, 1800);
-  };
+  const cleanId = sign.id.replace(/^sign_/, '');
+  const spec = LIBRAS_SIGN_DATABASE.find(
+    (s) => s.id === cleanId || s.id === sign.id || s.name.toLowerCase() === sign.name.toLowerCase()
+  );
 
-  const getDimensionClasses = () => {
-    switch (size) {
-      case 'sm':
-        return 'w-24 h-24 text-3xl';
-      case 'md':
-        return 'w-40 h-40 text-5xl';
-      case 'lg':
-        return 'w-56 h-56 text-7xl';
-      case 'hero':
-        return 'w-72 h-72 text-8xl';
-      default:
-        return 'w-40 h-40 text-5xl';
-    }
-  };
+  const isValidated = (sign.validationStatus || spec?.validationStatus) === 'validated';
+  const refUrl =
+    sign.videoReferenceUrl ||
+    spec?.videoReference?.externalUrl ||
+    `https://www.spreadthesign.com/pt.br/search/?q=${encodeURIComponent(sign.name.split('/')[0].trim())}`;
+
+  const dimensionClasses =
+    size === 'sm'
+      ? 'w-24 h-24 text-3xl'
+      : size === 'lg'
+      ? 'w-44 h-44 text-6xl'
+      : size === 'hero'
+      ? 'w-56 h-56 text-7xl'
+      : 'w-32 h-32 text-5xl';
 
   return (
-    <div className={`relative flex flex-col items-center bg-white rounded-3xl border-2 border-slate-200 shadow-sm p-4 ${className}`}>
-      {/* Header Badge */}
-      <div className="w-full flex items-center justify-between mb-2">
-        <div className="flex items-center gap-1.5 bg-emerald-50 text-emerald-700 font-bold text-xs px-2.5 py-1 rounded-full border border-emerald-200">
-          <span className="text-sm">🤟</span>
-          <span>{sign.category}</span>
+    <div
+      className={`relative flex flex-col items-center bg-white rounded-3xl border-2 border-[#F1EAE2] shadow-sm p-5 ${className}`}
+    >
+      {/* Header */}
+      <div className="w-full flex flex-wrap items-center justify-between gap-2 mb-3">
+        <div className="flex items-center gap-1.5">
+          <span className="bg-[#FFF7ED] text-[#EA580C] font-black text-xs px-3 py-1 rounded-full border border-[#FED7AA]">
+            {sign.category}
+          </span>
+          {isValidated ? (
+            <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 font-black text-[10px] px-2.5 py-1 rounded-full border border-emerald-200">
+              <CheckCircle2 className="w-3 h-3" />
+              CÂMERA VALIDADA
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-800 font-black text-[10px] px-2.5 py-1 rounded-full border border-amber-200">
+              <AlertTriangle className="w-3 h-3" />
+              EM VALIDAÇÃO
+            </span>
+          )}
         </div>
 
         {showParameters && (
-          <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg text-xs font-semibold">
+          <div className="flex items-center gap-1 bg-[#FFF7ED] p-1 rounded-xl text-xs font-black border border-[#FED7AA]">
             <button
               onClick={() => setActiveTab('visual')}
-              className={`px-2 py-0.5 rounded-md transition-colors ${activeTab === 'visual' ? 'bg-white shadow-xs text-slate-800' : 'text-slate-500'}`}
+              className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                activeTab === 'visual' ? 'bg-[#FF6B00] text-white shadow-xs' : 'text-[#78716C]'
+              }`}
             >
-              Visual
+              Resumo
             </button>
             <button
               onClick={() => setActiveTab('params')}
-              className={`px-2 py-0.5 rounded-md transition-colors ${activeTab === 'params' ? 'bg-white shadow-xs text-slate-800' : 'text-slate-500'}`}
+              className={`px-2.5 py-1 rounded-lg transition-colors cursor-pointer ${
+                activeTab === 'params' ? 'bg-[#FF6B00] text-white shadow-xs' : 'text-[#78716C]'
+              }`}
             >
               5 Parâmetros
             </button>
@@ -84,101 +99,100 @@ export const LibrasHandSign: React.FC<LibrasHandSignProps> = ({
       </div>
 
       {activeTab === 'visual' ? (
-        <div className="relative flex flex-col items-center justify-center my-2">
-          {/* Main Visual Stage */}
-          <div
-            onClick={triggerAnimation}
-            className={`cursor-pointer group relative flex items-center justify-center rounded-2xl bg-gradient-to-b from-sky-50 to-emerald-50 border-2 border-emerald-100 overflow-hidden transition-all duration-300 ${getDimensionClasses()} ${
-              isPlaying ? 'scale-105 ring-4 ring-emerald-300 ring-offset-2 shadow-lg' : 'hover:border-emerald-300'
-            }`}
-          >
-            {/* Background motion trails */}
-            <div className="absolute inset-0 bg-[radial-gradient(#10b981_1px,transparent_1px)] [background-size:16px_16px] opacity-25" />
-
-            {/* Glowing active wave */}
-            {isPlaying && (
-              <div className="absolute inset-0 bg-emerald-400/10 animate-pulse rounded-2xl pointer-events-none" />
-            )}
-
-            {/* Core Graphic Glyph & Motion Representation */}
+        <div className="w-full flex flex-col items-center text-center my-2 space-y-3">
+          {sign.realImageUrl ? (
             <div
-              className={`relative z-10 select-none flex flex-col items-center justify-center transition-transform duration-500 ${
-                isPlaying ? 'animate-bounce' : 'group-hover:scale-110'
-              }`}
+              className={`rounded-2xl overflow-hidden border-2 border-[#FED7AA] ${dimensionClasses}`}
             >
-              <span>{sign.visualGlyph || '🤟'}</span>
+              <img
+                src={sign.realImageUrl}
+                alt={sign.name}
+                className="w-full h-full object-cover"
+              />
             </div>
-
-            {/* Motion Arrow Indicator Overlay */}
-            <div className="absolute bottom-2 right-2 flex items-center gap-1 bg-white/90 backdrop-blur-xs px-2 py-0.5 rounded-full border border-slate-200 text-[10px] font-bold text-slate-600 shadow-xs">
-              {isPlaying ? (
-                <RotateCcw className="w-3 h-3 animate-spin text-emerald-600" />
-              ) : (
-                <Play className="w-3 h-3 text-emerald-600 fill-emerald-600" />
-              )}
-              <span>{isPlaying ? 'Sinalizando...' : 'Tocar Sinal'}</span>
+          ) : (
+            <div
+              className={`flex flex-col items-center justify-center rounded-3xl bg-gradient-to-b from-[#FFF7ED] to-[#FFEDD5] border-2 border-[#FED7AA] ${dimensionClasses}`}
+            >
+              <span className="select-none">{sign.visualGlyph || '🤟'}</span>
             </div>
+          )}
 
-            {/* Location Tag */}
-            <div className="absolute top-2 left-2 bg-emerald-600 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full shadow-xs">
-              {sign.bodyLocation.split(' ')[0]}
+          <div>
+            <h4 className="font-black text-[#292524] text-xl tracking-tight">{sign.name}</h4>
+            <p className="text-xs text-[#78716C] font-medium mt-1 max-w-md">{sign.meaning}</p>
+          </div>
+
+          <div className="w-full grid grid-cols-1 sm:grid-cols-2 gap-2 text-left text-xs">
+            <div className="p-2.5 rounded-2xl bg-[#FFFDF9] border border-[#F1EAE2]">
+              <div className="font-black text-[#EA580C] text-[10px] uppercase">Configuração (CM)</div>
+              <div className="font-semibold text-[#292524] mt-0.5">{sign.handshapeName}</div>
+            </div>
+            <div className="p-2.5 rounded-2xl bg-[#FFFDF9] border border-[#F1EAE2]">
+              <div className="font-black text-[#EA580C] text-[10px] uppercase">Articulação (PA)</div>
+              <div className="font-semibold text-[#292524] mt-0.5">{sign.bodyLocation}</div>
             </div>
           </div>
 
-          {/* Sign Title */}
-          <h4 className="font-black text-slate-800 text-lg sm:text-xl mt-3 text-center tracking-tight">
-            {sign.name}
-          </h4>
-          <p className="text-xs text-slate-500 text-center font-medium mt-0.5 max-w-xs line-clamp-2">
-            {sign.meaning}
-          </p>
-
-          {/* Action Button */}
-          <button
-            onClick={triggerAnimation}
-            className="mt-3 flex items-center gap-2 px-4 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 active:translate-y-0.5 text-white font-bold text-xs shadow-[0_3px_0_#059669] transition-all"
+          <a
+            href={refUrl}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#FF6B00] hover:bg-[#EA580C] text-white font-black text-xs shadow-xs transition-all"
           >
-            <Sparkles className="w-3.5 h-3.5" />
-            <span>Repetir Demonstração</span>
-          </button>
+            <ExternalLink className="w-3.5 h-3.5" />
+            <span>Ver demonstração real (Spread the Sign)</span>
+          </a>
         </div>
       ) : (
-        /* 5 Parameters Detail Tab */
         <div className="w-full my-2 space-y-2 text-xs">
-          <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
-            <div className="font-extrabold text-emerald-700 flex items-center gap-1">
-              <span>1. Configuração de Mão (CM):</span>
+          <div className="p-3 rounded-2xl bg-[#FFF7ED] border border-[#FED7AA]">
+            <div className="font-black text-[#EA580C] flex items-center gap-1.5">
+              <Hand className="w-3.5 h-3.5" />
+              <span>1. Configuração de Mão (CM)</span>
             </div>
-            <p className="text-slate-700 font-semibold mt-0.5">{sign.handshapeName}</p>
+            <p className="text-[#292524] font-semibold mt-0.5">
+              {spec?.handshapeName || sign.handshapeName}
+            </p>
           </div>
 
-          <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
-            <div className="font-extrabold text-sky-700 flex items-center gap-1">
-              <span>2. Ponto de Articulação (PA):</span>
+          <div className="p-3 rounded-2xl bg-[#FFF7ED] border border-[#FED7AA]">
+            <div className="font-black text-[#EA580C] flex items-center gap-1.5">
+              <MapPin className="w-3.5 h-3.5" />
+              <span>2. Ponto de Articulação (PA)</span>
             </div>
-            <p className="text-slate-700 font-semibold mt-0.5">{sign.bodyLocation}</p>
+            <p className="text-[#292524] font-semibold mt-0.5">
+              {spec?.articulationLocationLabel || sign.bodyLocation}
+            </p>
           </div>
 
-          <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
-            <div className="font-extrabold text-purple-700 flex items-center gap-1">
-              <span>3. Movimento (M):</span>
+          <div className="p-3 rounded-2xl bg-[#FFF7ED] border border-[#FED7AA]">
+            <div className="font-black text-[#EA580C] flex items-center gap-1.5">
+              <Move className="w-3.5 h-3.5" />
+              <span>3. Movimento & Orientação (M / O)</span>
             </div>
-            <p className="text-slate-700 font-semibold mt-0.5">{sign.movementType}</p>
+            <p className="text-[#292524] font-semibold mt-0.5">
+              {spec
+                ? `${spec.palmOrientationLabel} — ${spec.trajectoryDescription}`
+                : sign.movementType}
+            </p>
           </div>
 
-          <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
-            <div className="font-extrabold text-amber-700 flex items-center gap-1">
-              <span>4. Expressão Não-Manual (NMF):</span>
+          <div className="p-3 rounded-2xl bg-[#FFF7ED] border border-[#FED7AA]">
+            <div className="font-black text-[#EA580C] flex items-center gap-1.5">
+              <Smile className="w-3.5 h-3.5" />
+              <span>4. Expressão Não-Manual (NMF)</span>
             </div>
-            <p className="text-slate-700 font-semibold mt-0.5">{sign.facialExpression}</p>
+            <p className="text-[#292524] font-semibold mt-0.5">
+              {spec?.facialExpressionLabel || sign.facialExpression}
+            </p>
           </div>
         </div>
       )}
 
-      {/* Description Tooltip Footer */}
       {showDetails && (
-        <div className="w-full mt-2 pt-2 border-t border-slate-100 flex items-start gap-1.5 text-slate-500 text-xs">
-          <Info className="w-4 h-4 text-emerald-500 shrink-0 mt-0.5" />
+        <div className="w-full mt-3 pt-3 border-t border-[#F1EAE2] flex items-start gap-2 text-[#78716C] text-xs">
+          <Info className="w-4 h-4 text-[#FF6B00] shrink-0 mt-0.5" />
           <span>{sign.description}</span>
         </div>
       )}
