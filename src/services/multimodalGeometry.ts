@@ -86,7 +86,7 @@ function jointAngleAtB(a: Point3D, b: Point3D, c: Point3D): number {
  * AND wrist-distance ratios in 3D so foreshortened fingers pointing at camera remain accurate.
  */
 function computeFingerAngles(
-  wrist: Point3D,
+  _wrist: Point3D,
   cmcOrMcp: Point3D,
   mcp: Point3D,
   pip: Point3D,
@@ -100,13 +100,16 @@ function computeFingerAngles(
   const dipAngleDeg = jointAngleAtB(pip, dip, tip);
 
   if (isThumb) {
-    // Thumb bends gently even when extended (~140-180 deg)
-    const angleScore = clamp01(((pipAngleDeg - 105) / 55 + (dipAngleDeg - 115) / 55) / 2);
-    const tipDistRatio = clamp01((dist3D(tip, cmcOrMcp) / palmScale - 0.55) / 0.45);
-    const extensionScore = clamp01(angleScore * 0.6 + tipDistRatio * 0.4);
+    // Thumb anatomy: CMC(1) -> MCP(2) -> IP(3) -> Tip(4).
+    // mcpAngleDeg measures CMC-MCP-IP bend; dipAngleDeg (passed as MCP-IP-Tip) measures IP bend.
+    const thumbMcpScore = clamp01((mcpAngleDeg - 95) / 60);
+    const thumbIpScore = clamp01((dipAngleDeg - 115) / 50);
+    const angleScore = thumbMcpScore * 0.55 + thumbIpScore * 0.45;
+    const tipDistRatio = clamp01((dist3D(tip, cmcOrMcp) / palmScale - 0.55) / 0.42);
+    const extensionScore = clamp01(angleScore * 0.62 + tipDistRatio * 0.38);
     return {
       mcpAngleDeg,
-      pipAngleDeg,
+      pipAngleDeg: dipAngleDeg,
       dipAngleDeg,
       extensionScore,
       curlScore: 1 - extensionScore
@@ -114,12 +117,12 @@ function computeFingerAngles(
   }
 
   // For index/middle/ring/pinky: straight finger has PIP ~165-180°, DIP ~165-180°, MCP ~150-180°
-  const pipScore = clamp01((pipAngleDeg - 85) / 85);
-  const dipScore = clamp01((dipAngleDeg - 105) / 65);
-  const mcpScore = clamp01((mcpAngleDeg - 95) / 70);
-  const tipToMcpRatio = clamp01((dist3D(tip, mcp) / palmScale - 0.42) / 0.45);
+  const pipScore = clamp01((pipAngleDeg - 82) / 83);
+  const dipScore = clamp01((dipAngleDeg - 100) / 65);
+  const mcpScore = clamp01((mcpAngleDeg - 92) / 70);
+  const tipToMcpRatio = clamp01((dist3D(tip, mcp) / palmScale - 0.40) / 0.45);
 
-  const extensionScore = clamp01(pipScore * 0.42 + dipScore * 0.25 + mcpScore * 0.18 + tipToMcpRatio * 0.15);
+  const extensionScore = clamp01(pipScore * 0.42 + dipScore * 0.24 + mcpScore * 0.18 + tipToMcpRatio * 0.16);
 
   return {
     mcpAngleDeg,
@@ -199,12 +202,13 @@ export function extractHandGeometry(
   const palmFacing = classifyPalmFacing(palmNormal, handedness);
 
   // 3D Joint angles & continuous extension scores for all 5 fingers
+  // For thumb: CMC(1) -> MCP(2) -> IP(3) -> Tip(4)
   const thumb = computeFingerAngles(
     geoWrist,
     geoPts[1],
     geoPts[2],
     geoPts[3],
-    geoPts[3],
+    geoPts[2],
     geoPts[4],
     geoPalmScale,
     true
@@ -212,8 +216,8 @@ export function extractHandGeometry(
   // Adjust thumb extension to also measure abduction away from index MCP & pinky MCP
   const thumbToPinky = dist3D(geoPts[4], geoPts[17]) / geoPalmScale;
   const thumbToIndexMcp = dist3D(geoPts[4], geoPts[5]) / geoPalmScale;
-  const thumbAbduction = clamp01((thumbToPinky - 0.65) / 0.6) * 0.5 + clamp01((thumbToIndexMcp - 0.38) / 0.42) * 0.5;
-  thumb.extensionScore = clamp01(thumb.extensionScore * 0.5 + thumbAbduction * 0.5);
+  const thumbAbduction = clamp01((thumbToPinky - 0.62) / 0.58) * 0.5 + clamp01((thumbToIndexMcp - 0.36) / 0.40) * 0.5;
+  thumb.extensionScore = clamp01(thumb.extensionScore * 0.55 + thumbAbduction * 0.45);
   thumb.curlScore = 1 - thumb.extensionScore;
 
   const index = computeFingerAngles(geoWrist, geoWrist, geoPts[5], geoPts[6], geoPts[7], geoPts[8], geoPalmScale);
@@ -389,7 +393,11 @@ export function extractBodyContext(
     y: (leftHip.y + rightHip.y) / 2,
     z: (leftHip.z + rightHip.z) / 2
   };
-  const torsoHeight = Math.max(0.18, dist2D(shoulderMid, hipMid));
+  const rawTorsoHeight = dist2D(shoulderMid, hipMid);
+  const hipsVisible = leftHip.y <= 1.2 && rightHip.y <= 1.2 && leftHip.y > shoulderMid.y + 0.05;
+  const torsoHeight = hipsVisible
+    ? Math.max(0.18, Math.min(bodyScale * 1.9, rawTorsoHeight))
+    : bodyScale * 1.28;
 
   const mouthMid: Point3D = {
     x: (mouthLeft.x + mouthRight.x) / 2,

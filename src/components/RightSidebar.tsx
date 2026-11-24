@@ -1,137 +1,78 @@
 import React from 'react';
-import { 
-  Sparkles, 
-  Trophy, 
-  Target, 
-  ChevronRight, 
+import {
+  Trophy,
+  Target,
+  ChevronRight,
   BookOpen
 } from 'lucide-react';
+import { User } from 'firebase/auth';
 import { UserProfile, MainTabType } from '../types';
-import { LIBRAS_DICTIONARY } from '../data/librasData';
+import { LibiMascot } from './LibiMascot';
 import { soundService } from '../services/soundService';
 
 interface RightSidebarProps {
   userProfile: UserProfile;
   onNavigateTab: (tab: MainTabType) => void;
-  onPreviewSign?: (signId: string) => void;
+  firebaseUser?: User | null;
+  authBusy?: boolean;
+  onOpenAuthModal?: () => void;
 }
 
-export const RightSidebar: React.FC<RightSidebarProps> = ({
+export const RightSidebar = ({
   userProfile,
   onNavigateTab,
-  onPreviewSign
-}) => {
+  firebaseUser,
+  authBusy = false,
+  onOpenAuthModal
+}: RightSidebarProps) => {
   const handleOpen = (tab: MainTabType) => {
     soundService.playTap();
     onNavigateTab(tab);
   };
 
-  const dailySign = LIBRAS_DICTIONARY[0]; // Oi / Tudo bem
-
   return (
-    <aside className="hidden xl:flex flex-col gap-5 w-80 sticky top-20 h-fit p-4 select-none">
-      
-      {/* 1. EasyLib Plus Card (Warm Sunset Gradient) */}
-      {!userProfile.isSuperDuolingo ? (
-        <div className="bg-gradient-to-br from-[#FF6B00] via-[#F97316] to-[#E11D48] rounded-3xl p-5 text-white shadow-xl space-y-3 relative overflow-hidden border-b-4 border-[#9F1239]">
-          <div className="flex items-center justify-between">
-            <span className="text-xs font-black uppercase tracking-widest bg-white/20 px-3 py-1 rounded-full backdrop-blur-sm text-[#FEF3C7]">
-              EasyLib Plus
-            </span>
-            <Sparkles className="w-5 h-5 text-yellow-300 animate-spin" />
+    <aside className="hidden xl:flex flex-col gap-4 w-80 sticky top-16 h-fit py-4 pr-4 select-none shrink-0">
+      {/* 1. Shortcut: Biblioteca de Sinais (255 sinais) */}
+      <div className="bg-[#F0FDFA] rounded-2xl border border-[#99F6E4] p-5 space-y-3">
+        <div className="flex items-start justify-between gap-3">
+          <div className="space-y-1 min-w-0">
+            <h3 className="font-display text-lg font-bold text-[#0F766E] leading-snug">
+              Biblioteca de Sinais
+            </h3>
+            <p className="text-xs text-[#115E59] font-medium leading-relaxed">
+              Consulte 255 sinais em Libras com demonstração em vídeo e câmera lenta.
+            </p>
           </div>
-          <div>
-            <h3 className="text-lg font-black leading-snug">Vidas infinitas e treinos de sinais!</h3>
-            <p className="text-xs text-white/95 font-semibold mt-1">Acelere sua fluência em Libras sem limite de erros.</p>
+          <div className="w-10 h-10 rounded-xl bg-[#0D9488] text-white flex items-center justify-center shrink-0">
+            <BookOpen className="w-5 h-5" />
           </div>
-          <button
-            onClick={() => handleOpen('shop')}
-            className="w-full py-2.5 px-4 rounded-2xl bg-white text-[#C2410C] hover:bg-[#FFF7ED] font-black text-xs uppercase tracking-wider border-b-4 border-[#FED7AA] transition-all cursor-pointer active:translate-y-0.5 shadow-md"
-          >
-            Experimente Grátis
-          </button>
-        </div>
-      ) : (
-        <div className="bg-gradient-to-r from-[#FF6B00] to-[#EA580C] rounded-3xl p-4 text-white shadow-md flex items-center gap-3 border-b-4 border-[#C2410C]">
-          <div className="w-10 h-10 rounded-2xl bg-white/20 flex items-center justify-center text-xl">
-            🤟
-          </div>
-          <div>
-            <div className="text-xs font-black uppercase tracking-wider text-amber-200">EasyLib Plus Ativo</div>
-            <div className="text-sm font-black">Vidas Ilimitadas</div>
-          </div>
-        </div>
-      )}
-
-      {/* 2. Sinal do Dia (Daily Sign Feature) */}
-      <div className="bg-white rounded-3xl border-2 border-[#F1EAE2] p-4 space-y-3 shadow-xs">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="text-lg">🤟</span>
-            <h4 className="font-black text-xs uppercase tracking-wider text-[#292524]">Sinal do Dia</h4>
-          </div>
-          <button
-            onClick={() => handleOpen('dictionary')}
-            className="text-[11px] font-black text-[#EA580C] hover:underline flex items-center cursor-pointer"
-          >
-            <span>Dicionário</span>
-            <ChevronRight className="w-3.5 h-3.5" />
-          </button>
         </div>
 
-        <div className="flex items-center gap-3 p-3 rounded-2xl bg-[#FFF7ED] border border-[#FED7AA]">
-          <div className="w-12 h-12 rounded-2xl bg-white border-2 border-[#FDBA74] flex items-center justify-center text-2xl shadow-xs shrink-0">
-            {dailySign.visualGlyph}
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="font-black text-sm text-[#292524] truncate">{dailySign.name}</div>
-            <div className="text-xs text-[#C2410C] font-bold truncate">{dailySign.handshapeName.split('(')[0]}</div>
-          </div>
-        </div>
+        <button
+          type="button"
+          onClick={() => handleOpen('dictionary')}
+          className="tactile-btn w-full py-2.5 px-4 rounded-xl bg-[#0D9488] hover:bg-[#0F766E] text-white font-bold text-xs uppercase tracking-wider border-b-4 border-[#115E59] cursor-pointer flex items-center justify-center gap-2"
+        >
+          <span>Explorar 255 sinais</span>
+          <ChevronRight className="w-4 h-4" />
+        </button>
       </div>
 
-      {/* 3. League Rank Widget */}
-      <div className="bg-white rounded-3xl border-2 border-[#F1EAE2] p-5 space-y-3 shadow-xs">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Trophy className="w-5 h-5 text-[#F59E0B]" />
-            <h4 className="font-black text-sm text-[#292524]">Divisão {userProfile.currentLeague}</h4>
+      {/* 2. Missões Diárias */}
+      <div className="bg-white rounded-2xl border border-[#E8E2D9] p-5 space-y-3.5">
+        <div className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <Target className="w-4 h-4 text-[#EA580C] shrink-0" />
+            <h4 className="font-display font-bold text-base text-[#1C1917] truncate">
+              Missões Diárias
+            </h4>
           </div>
           <button
-            onClick={() => handleOpen('leaderboards')}
-            className="text-xs font-black text-[#EA580C] hover:underline flex items-center cursor-pointer"
+            type="button"
+            onClick={() => handleOpen('quests')}
+            className="text-xs font-bold text-[#EA580C] hover:underline flex items-center cursor-pointer shrink-0"
           >
             <span>Ver todas</span>
-            <ChevronRight className="w-3.5 h-3.5" />
-          </button>
-        </div>
-
-        <div className="flex items-center gap-3 p-2.5 rounded-2xl bg-[#FFFDF9] border border-[#F1EAE2]">
-          <div className="w-8 h-8 rounded-full bg-gradient-to-br from-[#F59E0B] to-[#D97706] text-white flex items-center justify-center font-black text-xs shadow-xs">
-            #4
-          </div>
-          <div className="flex-1 min-w-0">
-            <div className="font-black text-xs text-[#292524] truncate">{userProfile.name}</div>
-            <div className="text-[11px] font-bold text-[#78716C]">{userProfile.xp} XP nesta semana</div>
-          </div>
-          <div className="text-[10px] font-black uppercase px-2 py-0.5 rounded-full bg-[#FEF3C7] text-[#B45309]">
-            Zona de Subida
-          </div>
-        </div>
-      </div>
-
-      {/* 4. Daily Quests Widget */}
-      <div className="bg-white rounded-3xl border-2 border-[#F1EAE2] p-5 space-y-4 shadow-xs">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Target className="w-5 h-5 text-[#EA580C]" />
-            <h4 className="font-black text-sm text-[#292524]">Missões do Dia</h4>
-          </div>
-          <button
-            onClick={() => handleOpen('quests')}
-            className="text-xs font-black text-[#EA580C] hover:underline flex items-center cursor-pointer"
-          >
-            <span>Ver tudo</span>
             <ChevronRight className="w-3.5 h-3.5" />
           </button>
         </div>
@@ -141,20 +82,17 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
             const pct = Math.min(100, Math.round((quest.current / quest.target) * 100));
             return (
               <div key={quest.id} className="space-y-1.5">
-                <div className="flex items-center justify-between text-xs font-bold text-[#292524]">
-                  <div className="flex items-center gap-1.5 truncate">
-                    <span>{quest.icon}</span>
-                    <span className="truncate">{quest.title}</span>
-                  </div>
-                  <span className="text-[11px] font-black text-[#78716C] shrink-0">
+                <div className="flex items-center justify-between text-xs font-semibold text-[#1C1917] gap-2">
+                  <span className="truncate">{quest.title}</span>
+                  <span className="text-[11px] font-bold text-[#78716C] shrink-0">
                     {quest.current}/{quest.target}
                   </span>
                 </div>
-                
-                {/* Progress bar */}
-                <div className="w-full h-2.5 bg-[#F5F5F4] rounded-full overflow-hidden">
-                  <div 
-                    className="h-full bg-gradient-to-r from-[#FF6B00] to-[#F59E0B] rounded-full transition-all duration-300"
+                <div className="w-full h-2.5 bg-[#F3F0EA] rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-300 ${
+                      quest.completed ? 'bg-[#0D9488]' : 'bg-[#EA580C]'
+                    }`}
                     style={{ width: `${pct}%` }}
                   />
                 </div>
@@ -164,6 +102,69 @@ export const RightSidebar: React.FC<RightSidebarProps> = ({
         </div>
       </div>
 
+      {/* 3. Salvar Progresso / Ranking */}
+      {!firebaseUser ? (
+        <div className="bg-white rounded-2xl border border-[#E8E2D9] p-5 space-y-3.5">
+          <div className="flex items-center gap-3">
+            <LibiMascot mood="acenando" size="xs" />
+            <div className="space-y-0.5 min-w-0">
+              <h4 className="font-display font-bold text-base text-[#1C1917] leading-tight">
+                Salve seu progresso
+              </h4>
+              <p className="text-xs text-[#57534E] leading-snug">
+                Entre com Google, Apple, E-mail ou Celular para guardar seus pontos e ranking.
+              </p>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            {onOpenAuthModal && (
+              <button
+                type="button"
+                onClick={() => {
+                  soundService.playTap();
+                  onOpenAuthModal();
+                }}
+                disabled={authBusy}
+                className="tactile-btn w-full py-2.5 px-4 rounded-xl bg-[#EA580C] hover:bg-[#DC4F06] disabled:opacity-60 text-white font-bold text-xs uppercase tracking-wider border-b-4 border-[#9A3412] cursor-pointer"
+              >
+                {authBusy ? 'Conectando...' : 'Entrar ou criar conta'}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => handleOpen('leaderboards')}
+              className="w-full py-2 px-3 rounded-xl text-[#0F766E] hover:bg-[#F0FDFA] font-bold text-xs cursor-pointer transition-colors"
+            >
+              Entrar em sala de ranking
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-[#E8E2D9] p-5 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 min-w-0">
+              <Trophy className="w-4 h-4 text-[#EA580C] shrink-0" />
+              <h4 className="font-display font-bold text-base text-[#1C1917] truncate">
+                Ranking por sala
+              </h4>
+            </div>
+            <button
+              type="button"
+              onClick={() => handleOpen('leaderboards')}
+              className="text-xs font-bold text-[#EA580C] hover:underline flex items-center cursor-pointer shrink-0"
+            >
+              <span>Abrir</span>
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between pt-1 text-sm gap-2">
+            <span className="font-semibold text-[#57534E] truncate">{userProfile.name}</span>
+            <span className="font-bold text-[#0F766E] shrink-0 tabular-nums">{userProfile.xp} XP</span>
+          </div>
+        </div>
+      )}
     </aside>
   );
 };

@@ -1140,3 +1140,48 @@ test('10. Hold-to-Confirm: ciclo completo, sem duplicação contínua, reset na 
   assert.equal(arbitrarySeq.contextualSuggestion, null);
   assert.equal(arbitrarySeq.isExactIdiomaticMatch, false);
 });
+
+test('11. Correção de ângulos 3D do polegar (estendido vs dobrado) e fallback de quadris fora da tela', () => {
+  const straightThumbLm = generateSyntheticHand({
+    wristPos: { x: 0.5, y: 0.55, z: -0.04 },
+    palmScale: 0.095,
+    facing: 'camera',
+    handedness: 'Right',
+    spec: { thumb: 1, index: 0, middle: 0, ring: 0, pinky: 0, thumbSpreadDeg: 62 }
+  });
+  const straightGeo = extractHandGeometry(straightThumbLm, 'Right');
+  assert.ok(
+    straightGeo.fingers.thumb.pipAngleDeg > 130,
+    `Ângulo IP do polegar estendido deve ser > 130°, obteve ${straightGeo.fingers.thumb.pipAngleDeg.toFixed(1)}°`
+  );
+  assert.ok(
+    straightGeo.fingers.thumb.extensionScore >= 0.8,
+    `Polegar estendido deve pontuar >= 0.80, obteve ${straightGeo.fingers.thumb.extensionScore.toFixed(3)}`
+  );
+
+  const tuckedThumbLm = generateSyntheticHand({
+    wristPos: { x: 0.5, y: 0.55, z: -0.04 },
+    palmScale: 0.095,
+    facing: 'camera',
+    handedness: 'Right',
+    spec: { thumb: 0, index: 1, middle: 0, ring: 0, pinky: 0, thumbCrossInward: true }
+  });
+  const tuckedGeo = extractHandGeometry(tuckedThumbLm, 'Right');
+  assert.ok(
+    tuckedGeo.fingers.thumb.extensionScore < 0.45,
+    `Polegar dobrado deve pontuar < 0.45, obteve ${tuckedGeo.fingers.thumb.extensionScore.toFixed(3)}`
+  );
+
+  const poseOffscreenHips = generateSyntheticPose({
+    shoulderMid: { x: 0.5, y: 0.46, z: 0 },
+    bodyScale: 0.28
+  });
+  poseOffscreenHips[23] = { x: 0.6, y: 1.45, z: 0 };
+  poseOffscreenHips[24] = { x: 0.4, y: 1.45, z: 0 };
+  const bodyCtx = extractBodyContext(poseOffscreenHips, [straightGeo]);
+  assert.ok(
+    Math.abs(bodyCtx.torsoHeight - 0.28 * 1.28) < 0.02,
+    `torsoHeight não deve distorcer com quadris fora da tela: ${bodyCtx.torsoHeight}`
+  );
+});
+

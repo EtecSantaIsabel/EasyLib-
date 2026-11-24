@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="112" fill="#0D9488"/>
+  <rect x="32" y="32" width="448" height="448" rx="92" fill="none" stroke="#99F6E4" stroke-opacity="0.35" stroke-width="10"/>
+  <circle cx="388" cy="128" r="36" fill="#EA580C"/>
+  <!-- Stylized open signing hand -->
+  <g fill="#FFFFFF" transform="translate(256, 274)">
+    <!-- Palm -->
+    <rect x="-64" y="-34" width="128" height="118" rx="44"/>
+    <!-- Thumb -->
+    <rect x="-112" y="-12" width="42" height="92" rx="21" transform="rotate(-32 -91 34)"/>
+    <!-- Index -->
+    <rect x="-58" y="-142" width="28" height="118" rx="14"/>
+    <!-- Middle -->
+    <rect x="-16" y="-164" width="28" height="138" rx="14"/>
+    <!-- Ring -->
+    <rect x="26" y="-148" width="28" height="122" rx="14"/>
+    <!-- Pinky -->
+    <rect x="64" y="-114" width="26" height="96" rx="13" transform="rotate(8 77 -66)"/>
+  </g>
+</svg>

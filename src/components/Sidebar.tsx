@@ -1,12 +1,14 @@
 import React from 'react';
-import { 
-  Home, 
-  Trophy, 
-  User, 
-  Camera
+import {
+  Compass,
+  BookOpen,
+  Trophy,
+  User,
+  Hand
 } from 'lucide-react';
 import { MainTabType, UserProfile } from '../types';
 import { soundService } from '../services/soundService';
+import { PWAInstallButton } from './PWAInstallButton';
 
 interface SidebarProps {
   activeTab: MainTabType;
@@ -14,16 +16,20 @@ interface SidebarProps {
   userProfile: UserProfile;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({
+export const Sidebar = ({
   activeTab,
-  setActiveTab,
-  userProfile
-}) => {
-  const navItems: { id: MainTabType; label: string; icon: React.FC<{ className?: string }> }[] = [
-    { id: 'learn', label: 'CAMINHO', icon: Home },
-    { id: 'camera', label: 'CÂMERA', icon: Camera },
-    { id: 'leaderboards', label: 'RANKING', icon: Trophy },
-    { id: 'profile', label: 'PERFIL', icon: User }
+  setActiveTab
+}: SidebarProps) => {
+  const navItems: {
+    id: MainTabType;
+    label: string;
+    mobileLabel: string;
+    icon: React.ComponentType<{ className?: string }>;
+  }[] = [
+    { id: 'learn', label: 'Caminho', mobileLabel: 'Caminho', icon: Compass },
+    { id: 'dictionary', label: 'Biblioteca de Sinais', mobileLabel: 'Biblioteca', icon: BookOpen },
+    { id: 'leaderboards', label: 'Ranking', mobileLabel: 'Ranking', icon: Trophy },
+    { id: 'profile', label: 'Perfil', mobileLabel: 'Perfil', icon: User }
   ];
 
   const handleNav = (tab: MainTabType) => {
@@ -34,77 +40,87 @@ export const Sidebar: React.FC<SidebarProps> = ({
   return (
     <>
       {/* Desktop & Tablet Sidebar */}
-      <aside className="hidden md:flex flex-col justify-between w-64 h-screen sticky top-0 bg-[#FFFDF9] border-r-2 border-[#F1EAE2] px-4 py-6 z-30 select-none">
-        
-        {/* Brand Logo */}
-        <div className="space-y-6">
-          <div 
+      <aside className="hidden md:flex flex-col justify-between w-64 h-screen sticky top-0 bg-[#FAF9F6] border-r border-[#E8E2D9] px-4 py-6 z-30 select-none shrink-0">
+        <div className="space-y-8">
+          {/* Brand Mark */}
+          <button
+            type="button"
             onClick={() => handleNav('learn')}
-            className="flex items-center gap-3 px-3 cursor-pointer group"
+            className="flex items-center gap-3 px-2.5 cursor-pointer group text-left w-full"
           >
-            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#FF6B00] to-[#EA580C] border-b-4 border-[#C2410C] flex items-center justify-center text-white font-black text-2xl shadow-md group-hover:scale-105 transition-transform">
-              <span>🤟</span>
+            <div className="w-10 h-10 rounded-xl bg-[#0D9488] border-b-[3px] border-[#0F766E] flex items-center justify-center text-white transition-transform group-hover:scale-[1.03] shrink-0">
+              <Hand className="w-5 h-5 stroke-[2.4]" />
             </div>
-            <div>
-              <div className="text-2xl font-black tracking-tight text-[#EA580C] leading-none flex items-center gap-1">
-                <span>EasyLib</span>
+            <div className="min-w-0">
+              <div className="font-display text-2xl font-bold tracking-tight text-[#1C1917] leading-none">
+                Easy<span className="text-[#EA580C]">Lib</span>
               </div>
-              <div className="text-[10px] font-black tracking-widest text-[#B45309] uppercase mt-1 flex items-center gap-1">
-                <span>LIBRAS</span>
-                <span className="text-xs">🇧🇷</span>
+              <div className="text-[11px] font-bold tracking-widest text-[#0F766E] uppercase mt-0.5">
+                Libras
               </div>
             </div>
-          </div>
+          </button>
 
-          {/* Nav Links */}
-          <nav className="space-y-2">
+          {/* Primary Nav Links (Only 4 items: Caminho, Biblioteca de Sinais, Ranking, Perfil) */}
+          <nav className="space-y-1.5" aria-label="Navegação principal">
             {navItems.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
               return (
                 <button
                   key={item.id}
+                  type="button"
                   onClick={() => handleNav(item.id)}
                   className={`
-                    w-full flex items-center gap-4 px-4 py-3.5 rounded-2xl font-black text-xs tracking-wider transition-all duration-150 cursor-pointer
+                    tactile-btn w-full flex items-center gap-3 px-4 py-3 rounded-2xl font-bold text-sm tracking-tight cursor-pointer text-left
                     ${isActive
-                      ? 'bg-[#FFEDD5] text-[#C2410C] border-2 border-[#FDBA74] shadow-xs'
-                      : 'text-[#78716C] hover:bg-[#FFF7ED] hover:text-[#C2410C] border-2 border-transparent'}
+                      ? 'bg-[#F0FDFA] text-[#0F766E] border border-[#99F6E4] border-b-[3px] border-b-[#0D9488]'
+                      : 'text-[#57534E] hover:bg-[#F3F0EA] hover:text-[#1C1917] border border-transparent'}
                   `}
                 >
-                  <Icon className={`w-5 h-5 ${isActive ? 'stroke-[2.8] text-[#EA580C]' : 'stroke-2'}`} />
-                  <span>{item.label}</span>
+                  <Icon
+                    className={`w-5 h-5 shrink-0 ${
+                      isActive ? 'stroke-[2.5] text-[#0D9488]' : 'stroke-2 text-[#78716C]'
+                    }`}
+                  />
+                  <span className="truncate">{item.label}</span>
                 </button>
               );
             })}
           </nav>
         </div>
 
-        {/* Footer info */}
-        <div className="px-3 py-2 text-center text-[11px] font-bold text-[#A8A29E]">
-          EasyLib Libras • Prática com Câmera
+        {/* Quiet Footer + PWA Install */}
+        <div className="space-y-3">
+          <PWAInstallButton compact={true} />
+          <div className="px-3 py-1 text-xs font-semibold text-[#78716C]">
+            EasyLib • Ensino de Libras
+          </div>
         </div>
-
       </aside>
 
       {/* Mobile Bottom Navigation Bar */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#FFFDF9]/95 backdrop-blur-md border-t-2 border-[#F1EAE2] px-2 py-2 flex items-center justify-around shadow-2xl">
+      <nav
+        aria-label="Navegação móvel"
+        className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#FAF9F6]/95 backdrop-blur-md border-t border-[#E8E2D9] px-2 py-1.5 flex items-center justify-around gap-1"
+      >
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;
           return (
             <button
               key={item.id}
+              type="button"
               onClick={() => handleNav(item.id)}
               className={`
-                flex flex-col items-center justify-center p-2 rounded-xl transition-all cursor-pointer flex-1
+                flex flex-col items-center justify-center py-1.5 px-2 rounded-xl transition-colors cursor-pointer flex-1 min-w-0
                 ${isActive
-                  ? 'text-[#EA580C] scale-105 font-black'
-                  : 'text-[#A8A29E] hover:text-[#78716C]'}
+                  ? 'text-[#0F766E] bg-[#F0FDFA] font-bold'
+                  : 'text-[#78716C] hover:text-[#1C1917] font-semibold'}
               `}
             >
-              <Icon className={`w-5 h-5 ${isActive ? 'stroke-[2.8]' : 'stroke-2'}`} />
-              <span className="text-[10px] font-black tracking-tight mt-0.5">{item.label}</span>
+              <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'stroke-[2.5] text-[#0D9488]' : 'stroke-2'}`} />
+              <span className="text-[11px] mt-0.5 truncate max-w-full">{item.mobileLabel}</span>
             </button>
           );
         })}

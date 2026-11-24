@@ -1,25 +1,24 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  X, 
-  Heart, 
-  Sparkles, 
-  Zap, 
-  Flame, 
-  CheckCircle2, 
-  AlertCircle, 
+import React, { useState, useEffect, useMemo } from 'react';
+import {
+  X,
+  Heart,
   ArrowRight,
   Infinity as InfinityIcon,
-  Trophy,
-  Play,
-  RotateCcw,
-  BookOpen,
-  Info
+  Check,
+  Flame,
+  Camera
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { Exercise, PathNode, Unit, UserProfile } from '../types';
-import { DuoOwl } from '../components/DuoOwl';
-import { LibrasHandSign } from '../components/LibrasHandSign';
+import { MatchPair, PathNode, Unit, UserProfile } from '../types';
+import { LibiMascot } from '../components/LibiMascot';
 import { SignDemonstrationVisual } from '../components/SignDemonstrationVisual';
+import {
+  SignMediaPlayer,
+  SignSchematicVisualizer
+} from '../components/SignSchematicVisualizer';
+import { DactylologyPlayer } from '../components/DactylologyPlayer';
+import { SingleTargetCameraExercise } from '../components/SingleTargetCameraExercise';
+import { findCatalogSign } from '../data/librasCatalog255';
 import { soundService } from '../services/soundService';
 
 interface LessonPlayerModalProps {
@@ -31,14 +30,30 @@ interface LessonPlayerModalProps {
   onLoseHeart: () => void;
 }
 
-export const LessonPlayerModal: React.FC<LessonPlayerModalProps> = ({
+function shuffleDeterministicNotIdentical(pairs: MatchPair[]): MatchPair[] {
+  if (pairs.length <= 1) return pairs;
+  const copy = [...pairs];
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    const tmp = copy[i];
+    copy[i] = copy[j];
+    copy[j] = tmp;
+  }
+  const allSameOrder = copy.every((item, idx) => item.id === pairs[idx].id);
+  if (allSameOrder) {
+    const first = copy.shift()!;
+    copy.push(first);
+  }
+  return copy;
+}
+
+export const LessonPlayerModal = ({
   node,
-  unit,
   userProfile,
   onClose,
   onLessonCompleted,
   onLoseHeart
-}) => {
+}: LessonPlayerModalProps) => {
   const exercises = node.exercises;
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedWords, setSelectedWords] = useState<string[]>([]);
@@ -46,36 +61,53 @@ export const LessonPlayerModal: React.FC<LessonPlayerModalProps> = ({
   const [selectedOptionId, setSelectedOptionId] = useState<string | null>(null);
 
   // Match pairs state
+  const [shuffledRightPairs, setShuffledRightPairs] = useState<MatchPair[]>([]);
   const [matchedPairIds, setMatchedPairIds] = useState<string[]>([]);
   const [selectedSignItem, setSelectedSignItem] = useState<{ id: string; name: string } | null>(null);
   const [selectedWordItem, setSelectedWordItem] = useState<{ id: string; text: string } | null>(null);
+  const [mismatchPair, setMismatchPair] = useState<{ wordId?: string; signId?: string } | null>(null);
 
-  // Story state
+  // Story dialogue state
   const [storyLineIndex, setStoryLineIndex] = useState(0);
 
-  // Status state
-  const [status, setStatus] = useState<'idle' | 'correct' | 'incorrect' | 'completed' | 'out_of_hearts'>('idle');
+  // Camera quality tracking
+  const [cameraScores, setCameraScores] = useState<number[]>([]);
+
+  // Status & score state
+  const [status, setStatus] = useState<
+    'idle' | 'correct' | 'incorrect' | 'completed' | 'out_of_hearts'
+  >('idle');
   const [comboCount, setComboCount] = useState(0);
   const [correctCount, setCorrectCount] = useState(0);
 
   const currentExercise = exercises[currentIndex];
-  const progressPercent = Math.round((currentIndex / exercises.length) * 100);
+  const progressPercent =
+    status === 'completed'
+      ? 100
+      : Math.round(
+          ((currentIndex + (status === 'correct' ? 1 : 0)) / Math.max(1, exercises.length)) * 100
+        );
 
-  // Initialize exercise state on index change
   useEffect(() => {
     if (!currentExercise) return;
     setStatus('idle');
     setSelectedOptionId(null);
     setSelectedWords([]);
+    setMismatchPair(null);
 
     if (currentExercise.wordBank) {
       setAvailableWords([...currentExercise.wordBank].sort(() => Math.random() - 0.5));
+    } else {
+      setAvailableWords([]);
     }
 
-    if (currentExercise.type === 'match_sign_pairs') {
+    if (currentExercise.type === 'match_sign_pairs' && currentExercise.matchPairs) {
       setMatchedPairIds([]);
       setSelectedSignItem(null);
       setSelectedWordItem(null);
+      setShuffledRightPairs(shuffleDeterministicNotIdentical(currentExercise.matchPairs));
+    } else {
+      setShuffledRightPairs([]);
     }
 
     if (currentExercise.type === 'story_dialogue') {
@@ -83,82 +115,163 @@ export const LessonPlayerModal: React.FC<LessonPlayerModalProps> = ({
     }
   }, [currentIndex, currentExercise]);
 
-  // Word bank click (add to answer sentence)
+  const slowReadingSign = useMemo(() => {
+    if (!currentExercise) return null;
+    if (currentExercise.type !== 'slow_reading' && currentExercise.type !== 'identify_sign') {
+      return null;
+    }
+    return findCatalogSign(
+      currentExercise.targetSignId ||
+        currentExercise.sign?.id ||
+        currentExercise.correctAnswers[0] ||
+        'oi'
+    );
+  }, [currentExercise]);
+
   const handleWordClick = (word: string, index: number) => {
+    if (status !== 'idle') return;
     soundService.playTap();
-    setSelectedWords([...selectedWords, word]);
-    const updated = [...availableWords];
-    updated.splice(index, 1);
-    setAvailableWords(updated);
+    setSelectedWords((prev) => [...prev, word]);
+    setAvailableWords((prev) => {
+      const updated = [...prev];
+      updated.splice(index, 1);
+      return updated;
+    });
   };
 
-  // Selected word remove (return to bank)
   const handleRemoveWord = (word: string, index: number) => {
+    if (status !== 'idle') return;
     soundService.playPop();
-    const updatedSelected = [...selectedWords];
-    updatedSelected.splice(index, 1);
-    setSelectedWords(updatedSelected);
-    setAvailableWords([...availableWords, word]);
+    setSelectedWords((prev) => {
+      const updated = [...prev];
+      updated.splice(index, 1);
+      return updated;
+    });
+    setAvailableWords((prev) => [...prev, word]);
   };
 
-  // Match pairs handling
-  const handleSelectSignItem = (id: string, name: string) => {
-    soundService.playTap();
-    if (selectedWordItem) {
-      if (selectedWordItem.id === id) {
-        // Match!
-        soundService.playMatchPair();
-        setMatchedPairIds([...matchedPairIds, id]);
-        setSelectedSignItem(null);
-        setSelectedWordItem(null);
-      } else {
-        // Mismatch
-        soundService.playIncorrect();
-        setSelectedSignItem(null);
-        setSelectedWordItem(null);
-      }
-    } else {
-      setSelectedSignItem({ id, name });
+  const completeMatchExerciseIfDone = (nextMatched: string[]) => {
+    const total = currentExercise?.matchPairs?.length || 0;
+    if (total > 0 && nextMatched.length === total && status === 'idle') {
+      soundService.playCorrect();
+      setStatus('correct');
+      setComboCount((prev) => prev + 1);
+      setCorrectCount((prev) => prev + 1);
     }
   };
 
   const handleSelectWordItem = (id: string, text: string) => {
+    if (status !== 'idle' || matchedPairIds.includes(id)) return;
     soundService.playTap();
+
     if (selectedSignItem) {
       if (selectedSignItem.id === id) {
-        // Match!
         soundService.playMatchPair();
-        setMatchedPairIds([...matchedPairIds, id]);
+        const nextMatched = [...matchedPairIds, id];
+        setMatchedPairIds(nextMatched);
         setSelectedSignItem(null);
         setSelectedWordItem(null);
+        completeMatchExerciseIfDone(nextMatched);
       } else {
-        // Mismatch
         soundService.playIncorrect();
+        setMismatchPair({ wordId: id, signId: selectedSignItem.id });
         setSelectedSignItem(null);
         setSelectedWordItem(null);
+        window.setTimeout(() => setMismatchPair(null), 450);
       }
     } else {
       setSelectedWordItem({ id, text });
     }
   };
 
-  // Check answer
+  const handleSelectSignItem = (id: string, name: string) => {
+    if (status !== 'idle' || matchedPairIds.includes(id)) return;
+    soundService.playTap();
+
+    if (selectedWordItem) {
+      if (selectedWordItem.id === id) {
+        soundService.playMatchPair();
+        const nextMatched = [...matchedPairIds, id];
+        setMatchedPairIds(nextMatched);
+        setSelectedSignItem(null);
+        setSelectedWordItem(null);
+        completeMatchExerciseIfDone(nextMatched);
+      } else {
+        soundService.playIncorrect();
+        setMismatchPair({ wordId: selectedWordItem.id, signId: id });
+        setSelectedSignItem(null);
+        setSelectedWordItem(null);
+        window.setTimeout(() => setMismatchPair(null), 450);
+      }
+    } else {
+      setSelectedSignItem({ id, name });
+    }
+  };
+
+  const canCheckCurrent = (() => {
+    if (!currentExercise || status !== 'idle') return false;
+    switch (currentExercise.type) {
+      case 'new_sign_cards':
+      case 'slow_reading':
+      case 'dialogue_completion':
+      case 'identify_sign':
+      case 'parameter_quiz':
+      case 'nmf_facial_quiz':
+        return selectedOptionId !== null;
+      case 'dactylology_spelling':
+      case 'translate_to_libras':
+      case 'fill_in_blank_sign':
+        return selectedWords.length > 0;
+      case 'match_sign_pairs':
+        return matchedPairIds.length === (currentExercise.matchPairs?.length || 0);
+      case 'story_dialogue':
+        return true;
+      case 'camera_practice':
+        return false;
+      default:
+        return false;
+    }
+  })();
+
   const handleCheckAnswer = () => {
-    if (status !== 'idle') return;
+    if (status !== 'idle' || !currentExercise || !canCheckCurrent) return;
 
     let isCorrect = false;
-    const normalize = (s: string) => s.toLowerCase().replace(/[.,!?;:¡¿\s-]/g, '').trim();
+    const normalize = (s: string) =>
+      s
+        .toLowerCase()
+        .replace(/[.,!?;:¡¿\s-]+/g, '')
+        .trim();
 
-    if (currentExercise.type === 'identify_sign' || currentExercise.type === 'parameter_quiz' || currentExercise.type === 'nmf_facial_quiz') {
-      const chosenOpt = currentExercise.options?.find(o => o.id === selectedOptionId);
+    if (
+      currentExercise.type === 'new_sign_cards' ||
+      currentExercise.type === 'slow_reading' ||
+      currentExercise.type === 'dialogue_completion' ||
+      currentExercise.type === 'identify_sign' ||
+      currentExercise.type === 'parameter_quiz' ||
+      currentExercise.type === 'nmf_facial_quiz'
+    ) {
+      const chosenOpt = currentExercise.options?.find((o) => o.id === selectedOptionId);
       if (chosenOpt) {
-        isCorrect = currentExercise.correctAnswers.some(ans => normalize(ans) === normalize(chosenOpt.text));
+        isCorrect = currentExercise.correctAnswers.some(
+          (ans) => normalize(ans) === normalize(chosenOpt.text)
+        );
       }
-    } else if (currentExercise.type === 'translate_to_libras' || currentExercise.type === 'dactylology_spelling' || currentExercise.type === 'fill_in_blank_sign') {
+    } else if (currentExercise.type === 'dactylology_spelling') {
+      const builtWord = selectedWords.join('').trim();
+      isCorrect = currentExercise.correctAnswers.some(
+        (ans) => normalize(ans) === normalize(builtWord)
+      );
+    } else if (
+      currentExercise.type === 'translate_to_libras' ||
+      currentExercise.type === 'fill_in_blank_sign'
+    ) {
       const builtSentence = selectedWords.join(' ').trim();
-      isCorrect = currentExercise.correctAnswers.some(ans => normalize(ans) === normalize(builtSentence));
+      isCorrect = currentExercise.correctAnswers.some(
+        (ans) => normalize(ans) === normalize(builtSentence)
+      );
     } else if (currentExercise.type === 'match_sign_pairs') {
-      isCorrect = (matchedPairIds.length === (currentExercise.matchPairs?.length || 0));
+      isCorrect = matchedPairIds.length === (currentExercise.matchPairs?.length || 0);
     } else if (currentExercise.type === 'story_dialogue') {
       isCorrect = true;
     }
@@ -166,8 +279,8 @@ export const LessonPlayerModal: React.FC<LessonPlayerModalProps> = ({
     if (isCorrect) {
       soundService.playCorrect();
       setStatus('correct');
-      setComboCount(prev => prev + 1);
-      setCorrectCount(prev => prev + 1);
+      setComboCount((prev) => prev + 1);
+      setCorrectCount((prev) => prev + 1);
     } else {
       soundService.playIncorrect();
       setStatus('incorrect');
@@ -180,165 +293,290 @@ export const LessonPlayerModal: React.FC<LessonPlayerModalProps> = ({
     }
   };
 
-  // Move to next or finish
+  const handleSkipCamera = () => {
+    if (status !== 'idle') return;
+    soundService.playTap();
+    setStatus('correct');
+    setCorrectCount((prev) => prev + 1);
+  };
+
   const handleContinue = () => {
     soundService.playTap();
     if (currentIndex + 1 < exercises.length) {
-      setCurrentIndex(currentIndex + 1);
+      setCurrentIndex((prev) => prev + 1);
     } else {
       soundService.playLessonComplete();
       try {
         confetti({
-          particleCount: 150,
-          spread: 90,
+          particleCount: 120,
+          spread: 85,
           origin: { y: 0.6 }
         });
-      } catch (e) {
-        // Safe fallback
+      } catch {
+        // Safe visual-only fallback
       }
       setStatus('completed');
       onLessonCompleted(node.xpReward + comboCount * 2, node.gemsReward);
     }
   };
 
+  const earnedXp = node.xpReward + comboCount * 2;
+  const overallAccuracy = Math.round((correctCount / Math.max(1, exercises.length)) * 100);
+  const avgCameraAccuracy =
+    cameraScores.length > 0
+      ? Math.round(cameraScores.reduce((sum, score) => sum + score, 0) / cameraScores.length)
+      : null;
+
   return (
-    <div className="fixed inset-0 z-50 bg-white flex flex-col justify-between select-none animate-fade-in">
-      
-      {/* 1. Header with Close, Progress Bar & Hearts */}
-      <header className="max-w-4xl w-full mx-auto px-4 py-4 sm:py-6 flex items-center justify-between gap-4">
+    <div className="fixed inset-0 z-50 bg-[#FAF9F6] flex flex-col justify-between select-none animate-fade-in">
+      {/* 1. Top Bar: Close, Progress Bar & Hearts */}
+      <header className="max-w-3xl w-full mx-auto px-4 py-4 sm:py-5 flex items-center justify-between gap-4 shrink-0">
         <button
+          type="button"
           onClick={onClose}
-          className="p-2 rounded-2xl hover:bg-[#FFF7ED] text-[#A8A29E] hover:text-[#292524] cursor-pointer"
+          aria-label="Sair da atividade"
+          className="p-2 rounded-xl hover:bg-[#F3F0EA] text-[#78716C] hover:text-[#1C1917] cursor-pointer transition-colors"
         >
-          <X className="w-6 h-6 stroke-[3]" />
+          <X className="w-6 h-6 stroke-[2.5]" />
         </button>
 
-        {/* Orange Progress Bar */}
-        <div className="flex-1 h-4 bg-[#F1EAE2] rounded-full overflow-hidden relative">
-          <div 
-            className="h-full bg-gradient-to-r from-[#FF6B00] to-[#EA580C] rounded-full transition-all duration-300 relative overflow-hidden"
-            style={{ width: `${progressPercent}%` }}
-          >
-            <div className="absolute top-1 left-2 right-2 h-1 bg-white/30 rounded-full" />
+        <div className="flex-1 flex items-center gap-3 min-w-0">
+          <div className="flex-1 h-3.5 bg-[#E8E2D9] rounded-full overflow-hidden">
+            <div
+              className="h-full bg-[#EA580C] rounded-full transition-all duration-300"
+              style={{ width: `${progressPercent}%` }}
+            />
           </div>
+          <span className="text-xs font-bold text-[#78716C] tabular-nums shrink-0">
+            {Math.min(currentIndex + 1, exercises.length)}/{exercises.length}
+          </span>
         </div>
 
-        {/* Hearts display */}
-        <div className="flex items-center gap-1 text-[#E11D48] font-black text-sm">
+        <div className="flex items-center gap-1.5 text-[#E11D48] font-bold text-sm tabular-nums shrink-0">
           {userProfile.isSuperDuolingo ? (
-            <div className="flex items-center gap-1 text-[#EA580C]">
-              <InfinityIcon className="w-5 h-5 stroke-[3]" />
-              <span className="text-xs uppercase font-black">PLUS</span>
+            <div className="flex items-center gap-1 text-[#0F766E]">
+              <InfinityIcon className="w-5 h-5 stroke-[2.5]" />
+              <span className="text-xs uppercase font-bold">Plus</span>
             </div>
           ) : (
             <>
-              <Heart className="w-6 h-6 fill-[#E11D48] text-[#E11D48]" />
+              <Heart className="w-5 h-5 fill-[#E11D48] text-[#E11D48]" />
               <span>{userProfile.hearts}</span>
             </>
           )}
         </div>
       </header>
 
-      {/* 2. Main Exercise Content Area */}
-      <main className="max-w-2xl w-full mx-auto px-4 py-2 flex-1 flex flex-col justify-center overflow-y-auto">
-        
-        {/* === Completion Screen (Visual Applause 👐) === */}
+      {/* 2. Main Exercise Viewport */}
+      <main
+        className={`w-full mx-auto px-4 py-2 flex-1 flex flex-col justify-start sm:justify-center overflow-y-auto ${
+          currentExercise?.type === 'camera_practice' ? 'max-w-4xl' : 'max-w-2xl'
+        }`}
+      >
+        {/* Completion Screen */}
         {status === 'completed' && (
-          <div className="text-center space-y-6 animate-scale-in py-6">
+          <div className="text-center space-y-6 animate-scale-in py-6 my-auto">
             <div className="flex flex-col items-center justify-center">
-              <DuoOwl mood="visual_applause" outfit={userProfile.duoOutfit} size="lg" />
-              <div className="mt-2 text-2xl font-black text-[#EA580C] flex items-center gap-2">
-                <span>👐</span>
-                <span>Palmas Visuais em Libras!</span>
-                <span>✨</span>
-              </div>
-            </div>
-            
-            <div className="space-y-2">
-              <h2 className="text-3xl sm:text-4xl font-black text-[#EA580C]">Lição Concluída!</h2>
-              <p className="text-sm font-bold text-[#78716C]">Parabéns! Você praticou novos sinais e fortaleceu sua fluência no EasyLib.</p>
+              <LibiMascot
+                mood="comemorando"
+                size="lg"
+                showSpeechBubble={true}
+                speechText="Mandou bem!"
+              />
             </div>
 
-            {/* Stat Badges */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 max-w-md mx-auto">
-              <div className="p-4 rounded-3xl bg-[#FF6B00] text-white space-y-1 shadow-md">
-                <span className="text-[11px] font-black uppercase tracking-wider">TOTAL DE XP</span>
-                <div className="text-2xl font-black">+{node.xpReward + comboCount * 2}</div>
+            <div className="space-y-1.5">
+              <h2 className="font-display text-3xl sm:text-4xl font-bold text-[#1C1917]">
+                Atividade concluída
+              </h2>
+              <p className="text-sm font-medium text-[#57534E]">
+                Você completou todos os exercícios desta atividade.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 max-w-xl mx-auto tabular-nums">
+              <div className="p-4 rounded-2xl bg-[#EA580C] text-white space-y-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#FFEDD5] block">
+                  XP ganho
+                </span>
+                <div className="font-display text-2xl font-bold">+{earnedXp}</div>
               </div>
 
-              <div className="p-4 rounded-3xl bg-[#EA580C] text-white space-y-1 shadow-md">
-                <span className="text-[11px] font-black uppercase tracking-wider">PRECISÃO</span>
-                <div className="text-2xl font-black">
-                  {Math.round((correctCount / Math.max(1, exercises.length)) * 100)}%
+              <div className="p-4 rounded-2xl bg-[#0D9488] text-white space-y-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#CCFBF1] flex items-center justify-center gap-1">
+                  <Camera className="w-3.5 h-3.5" />
+                  <span>{avgCameraAccuracy !== null ? 'Câmera' : 'Precisão'}</span>
+                </span>
+                <div className="font-display text-2xl font-bold">
+                  {avgCameraAccuracy !== null ? `${avgCameraAccuracy}%` : `${overallAccuracy}%`}
                 </div>
               </div>
 
-              <div className="p-4 rounded-3xl bg-[#D97706] text-white space-y-1 shadow-md col-span-2 sm:col-span-1">
-                <span className="text-[11px] font-black uppercase tracking-wider">GEMAS</span>
-                <div className="text-2xl font-black">+{node.gemsReward} 💎</div>
+              <div className="p-4 rounded-2xl bg-[#FFF1E6] border border-[#FED7AA] text-[#9A3412] space-y-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#C2410C] flex items-center justify-center gap-1">
+                  <Flame className="w-3.5 h-3.5 fill-[#EA580C] text-[#EA580C]" />
+                  <span>Ofensiva</span>
+                </span>
+                <div className="font-display text-2xl font-bold">
+                  {userProfile.streakDays}d
+                </div>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-[#D97706] text-white space-y-1">
+                <span className="text-[11px] font-bold uppercase tracking-wider text-[#FEF3C7] block">
+                  Gemas
+                </span>
+                <div className="font-display text-2xl font-bold">+{node.gemsReward}</div>
               </div>
             </div>
 
             <button
+              type="button"
               onClick={onClose}
-              className="py-4 px-12 rounded-2xl bg-[#FF6B00] hover:bg-[#EA580C] text-white font-black text-sm uppercase tracking-wider border-b-6 border-[#9A3412] cursor-pointer shadow-xl transition-all active:translate-y-1"
+              className="tactile-btn py-3.5 px-10 rounded-2xl bg-[#EA580C] hover:bg-[#DC4F06] text-white font-bold text-sm uppercase tracking-wider border-b-4 border-[#9A3412] cursor-pointer"
             >
-              Continuar na Trilha
+              Continuar na trilha
             </button>
           </div>
         )}
 
-        {/* === Out of Hearts Screen === */}
+        {/* Out of Hearts Screen */}
         {status === 'out_of_hearts' && (
-          <div className="text-center space-y-6 animate-scale-in py-6">
-            <DuoOwl mood="thinking" size="lg" />
-            <div className="space-y-2">
-              <h2 className="text-3xl font-black text-[#E11D48]">Suas vidas acabaram!</h2>
-              <p className="text-sm font-bold text-[#78716C]">
-                Pratique sinais e assista aos vídeos demonstrativos para recuperar vidas ou ative o EasyLib Plus!
+          <div className="text-center space-y-6 animate-scale-in py-6 my-auto">
+            <div className="flex justify-center">
+              <LibiMascot
+                mood="incentivando"
+                size="lg"
+                showSpeechBubble={true}
+                speechText="Sem problemas, tente de novo!"
+              />
+            </div>
+            <div className="space-y-1.5 max-w-md mx-auto">
+              <h2 className="font-display text-3xl font-bold text-[#1C1917]">
+                Suas vidas acabaram
+              </h2>
+              <p className="text-sm font-medium text-[#57534E]">
+                Recarregue suas vidas no topo da tela para continuar.
               </p>
             </div>
 
-            <div className="space-y-3 max-w-sm mx-auto">
+            <div className="max-w-xs mx-auto">
               <button
+                type="button"
                 onClick={onClose}
-                className="w-full py-3.5 rounded-2xl bg-[#FF6B00] hover:bg-[#EA580C] text-white font-black text-xs uppercase tracking-wider border-b-4 border-[#9A3412] cursor-pointer"
+                className="tactile-btn w-full py-3.5 rounded-2xl bg-[#0D9488] hover:bg-[#0F766E] text-white font-bold text-xs uppercase tracking-wider border-b-4 border-[#115E59] cursor-pointer"
               >
-                Voltar à Trilha
+                Voltar à trilha
               </button>
             </div>
           </div>
         )}
 
-        {/* === Interactive Libras Exercises with Video & Rich Visuals === */}
+        {/* Active Exercise */}
         {status !== 'completed' && status !== 'out_of_hearts' && currentExercise && (
-          <div className="space-y-5">
-            
-            {/* Prompt Heading */}
-            <div className="space-y-1">
-              <div className="inline-flex items-center gap-1.5 text-xs font-black uppercase tracking-wider text-[#EA580C] bg-[#FFEDD5] px-3 py-1 rounded-full border border-[#FDBA74]">
-                <span>🤟</span>
-                <span>Exercício Visual de Libras</span>
+          <div className="space-y-4 py-2">
+            {/* Prompt Header */}
+            {currentExercise.type === 'new_sign_cards' ? (
+              <div className="space-y-2">
+                <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold uppercase tracking-wider">
+                  <span className="px-2 py-0.5 rounded-md bg-[#FFF1E6] text-[#EA580C] border border-[#FED7AA]">
+                    Sinal Novo
+                  </span>
+                  <span className="text-[#0F766E] tabular-nums">
+                    Exercício {currentIndex + 1} de {exercises.length}
+                  </span>
+                </div>
+
+                {/* Highlighted New Sign Name + Meaning Only */}
+                <div className="p-4 rounded-2xl bg-white border border-[#E8E2D9] space-y-0.5">
+                  <h2 className="font-display text-2xl sm:text-3xl font-bold text-[#1C1917]">
+                    {currentExercise.prompt}
+                  </h2>
+                  {currentExercise.signMeaning && (
+                    <p className="text-sm font-medium text-[#57534E]">
+                      {currentExercise.signMeaning}
+                    </p>
+                  )}
+                </div>
+
+                <p className="text-sm font-bold text-[#1C1917]">
+                  Qual destes é o sinal correspondente?
+                </p>
               </div>
-              <h2 className="text-xl sm:text-2xl font-black text-[#292524]">
-                {currentExercise.prompt}
-              </h2>
-              {currentExercise.grammarTip && (
-                <p className="text-xs font-semibold text-[#78716C]">{currentExercise.grammarTip}</p>
-              )}
-            </div>
+            ) : (
+              <div className="space-y-1">
+                <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold uppercase tracking-wider">
+                  <span className="text-[#0F766E] tabular-nums">
+                    Exercício {currentIndex + 1} de {exercises.length}
+                  </span>
+                </div>
+                <h2 className="font-display text-xl sm:text-2xl font-bold text-[#1C1917] leading-snug">
+                  {currentExercise.prompt}
+                </h2>
+              </div>
+            )}
 
-            {/* 1. Identify Sign with Video Demonstration & 5 Parameters Player */}
-            {currentExercise.type === 'identify_sign' && (
+            {/* FORMAT 1: Sinal Novo (4 Cartões Visuais Limpos) */}
+            {currentExercise.type === 'new_sign_cards' && currentExercise.options && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                {currentExercise.options.map((opt, idx) => {
+                  const isSelected = selectedOptionId === opt.id;
+                  const cardSign = findCatalogSign(opt.catalogSignId || opt.text);
+                  const letterCode = ['A', 'B', 'C', 'D'][idx] || `${idx + 1}`;
+                  const showWord = status !== 'idle';
+
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      disabled={status !== 'idle'}
+                      onClick={() => {
+                        soundService.playTap();
+                        setSelectedOptionId(opt.id);
+                      }}
+                      className={`tactile-btn p-3 rounded-2xl border border-b-4 text-left flex flex-col gap-2.5 cursor-pointer transition-colors ${
+                        isSelected
+                          ? 'bg-[#FFF1E6] border-[#EA580C] border-b-[#9A3412]'
+                          : 'bg-white border-[#E8E2D9] border-b-[#D6CFC5] hover:bg-[#FAF9F6]'
+                      }`}
+                    >
+                      <SignSchematicVisualizer
+                        sign={cardSign}
+                        compact={true}
+                        hideControls={true}
+                        className="w-full pointer-events-none"
+                      />
+
+                      <div className="flex items-center justify-between gap-2 px-1">
+                        <div className="text-sm font-bold text-[#1C1917] truncate">
+                          {showWord ? opt.text : `Opção ${letterCode}`}
+                        </div>
+                        <span
+                          className={`w-6 h-6 rounded-lg text-xs font-bold flex items-center justify-center shrink-0 ${
+                            isSelected
+                              ? 'bg-[#EA580C] text-white'
+                              : 'bg-[#F3F0EA] text-[#57534E]'
+                          }`}
+                        >
+                          {letterCode}
+                        </span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* FORMAT 2: Leitura de Sinal com Câmera Lenta (0.5x) */}
+            {currentExercise.type === 'slow_reading' && slowReadingSign && (
               <div className="space-y-4">
-                {currentExercise.sign && (
-                  <SignDemonstrationVisual
-                    sign={currentExercise.sign}
-                    className="max-w-md mx-auto"
-                  />
-                )}
+                <SignMediaPlayer
+                  sign={slowReadingSign}
+                  compact={false}
+                  turtleLabel={true}
+                  className="max-w-md mx-auto"
+                />
 
-                {/* Multiple Choice Cards */}
                 {currentExercise.options && (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
                     {currentExercise.options.map((opt) => {
@@ -346,29 +584,351 @@ export const LessonPlayerModal: React.FC<LessonPlayerModalProps> = ({
                       return (
                         <button
                           key={opt.id}
+                          type="button"
+                          disabled={status !== 'idle'}
                           onClick={() => {
                             soundService.playTap();
                             setSelectedOptionId(opt.id);
                           }}
-                          className={`
-                            p-4 rounded-3xl border-2 border-b-6 transition-all duration-150 cursor-pointer flex items-center gap-3 text-left active:translate-y-1
-                            ${isSelected
-                              ? 'bg-[#FFF7ED] border-[#FF6B00] border-b-[#9A3412] scale-[1.02] shadow-md text-[#EA580C]'
-                              : 'bg-white border-[#F1EAE2] border-b-[#FED7AA] hover:bg-[#FFFDF9] text-[#292524]'}
-                          `}
+                          className={`tactile-btn p-4 rounded-2xl border border-b-4 cursor-pointer flex items-center justify-between text-left ${
+                            isSelected
+                              ? 'bg-[#FFF1E6] border-[#EA580C] border-b-[#9A3412] text-[#9A3412]'
+                              : 'bg-white border-[#E8E2D9] border-b-[#D6CFC5] hover:bg-[#FAF9F6] text-[#1C1917]'
+                          }`}
                         >
-                          {opt.realImageUrl ? (
-                            <img 
-                              src={opt.realImageUrl} 
-                              alt={opt.text} 
-                              className="w-12 h-12 rounded-2xl object-cover shrink-0 border border-[#FED7AA] shadow-xs" 
+                          <div className="font-bold text-base">{opt.text}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Legacy Identify Sign */}
+            {currentExercise.type === 'identify_sign' && (
+              <div className="space-y-4">
+                {currentExercise.sign ? (
+                  <SignDemonstrationVisual
+                    sign={currentExercise.sign}
+                    className="max-w-md mx-auto"
+                  />
+                ) : (
+                  slowReadingSign && (
+                    <SignMediaPlayer sign={slowReadingSign} className="max-w-md mx-auto" />
+                  )
+                )}
+
+                {currentExercise.options && (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                    {currentExercise.options.map((opt) => {
+                      const isSelected = selectedOptionId === opt.id;
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          disabled={status !== 'idle'}
+                          onClick={() => {
+                            soundService.playTap();
+                            setSelectedOptionId(opt.id);
+                          }}
+                          className={`tactile-btn p-4 rounded-2xl border border-b-4 cursor-pointer flex items-center gap-3 text-left ${
+                            isSelected
+                              ? 'bg-[#FFF1E6] border-[#EA580C] border-b-[#9A3412] text-[#9A3412]'
+                              : 'bg-white border-[#E8E2D9] border-b-[#D6CFC5] hover:bg-[#FAF9F6] text-[#1C1917]'
+                          }`}
+                        >
+                          <div className="font-bold text-base">{opt.text}</div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* FORMAT 3: Leitura de Datilologia (Alfabeto Manual) */}
+            {currentExercise.type === 'dactylology_spelling' && (
+              <div className="space-y-4">
+                <DactylologyPlayer
+                  word={
+                    currentExercise.dactylologyWord ||
+                    currentExercise.correctAnswers[0] ||
+                    'LIBRAS'
+                  }
+                />
+
+                <div className="min-h-[64px] p-3 rounded-2xl border-b-2 border-dashed border-[#D6CFC5] bg-white flex flex-wrap items-center justify-center gap-2">
+                  {selectedWords.length === 0 ? (
+                    <span className="text-xs font-semibold text-[#78716C]">
+                      Toque nas letras abaixo na ordem da soletração
+                    </span>
+                  ) : (
+                    selectedWords.map((word, idx) => (
+                      <button
+                        key={`${word}-${idx}`}
+                        type="button"
+                        disabled={status !== 'idle'}
+                        onClick={() => handleRemoveWord(word, idx)}
+                        className="tactile-btn w-11 h-12 sm:w-12 sm:h-12 rounded-xl bg-[#FFF1E6] border border-[#FED7AA] border-b-4 border-b-[#EA580C] text-[#9A3412] font-bold text-lg hover:bg-rose-50 cursor-pointer animate-scale-in"
+                      >
+                        {word}
+                      </button>
+                    ))
+                  )}
+                </div>
+
+                <div className="flex flex-wrap justify-center gap-2 pt-1">
+                  {availableWords.map((word, idx) => (
+                    <button
+                      key={`${word}-avail-${idx}`}
+                      type="button"
+                      disabled={status !== 'idle'}
+                      onClick={() => handleWordClick(word, idx)}
+                      className="tactile-btn w-11 h-12 sm:w-12 sm:h-12 rounded-xl bg-white border border-[#E8E2D9] border-b-4 border-b-[#D6CFC5] text-[#1C1917] font-bold text-lg hover:bg-[#FFF1E6] cursor-pointer flex items-center justify-center"
+                    >
+                      {word}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* FORMAT 4: Combine os Pares */}
+            {currentExercise.type === 'match_sign_pairs' && currentExercise.matchPairs && (
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <div className="space-y-2.5">
+                  <span className="text-[11px] font-bold uppercase text-[#78716C] tracking-wider block">
+                    Português
+                  </span>
+                  {currentExercise.matchPairs.map((p) => {
+                    const isMatched = matchedPairIds.includes(p.id);
+                    const isSelected = selectedWordItem?.id === p.id;
+                    const isMismatch = mismatchPair?.wordId === p.id;
+
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        disabled={isMatched || status !== 'idle'}
+                        onClick={() => handleSelectWordItem(p.id, p.portugueseText)}
+                        className={`tactile-btn w-full h-[108px] px-4 rounded-2xl border border-b-4 font-bold text-sm sm:text-base text-left cursor-pointer flex items-center justify-between gap-2 transition-colors ${
+                          isMatched
+                            ? 'bg-[#F0FDFA] text-[#0F766E] border-[#99F6E4] border-b-[#5EEAD4] opacity-55 cursor-not-allowed'
+                            : isMismatch
+                            ? 'bg-[#FFF1F2] text-[#BE123C] border-[#FDA4AF] border-b-[#E11D48]'
+                            : isSelected
+                            ? 'bg-[#FFF1E6] text-[#9A3412] border-[#EA580C] border-b-[#9A3412]'
+                            : 'bg-white text-[#1C1917] border-[#E8E2D9] border-b-[#D6CFC5] hover:bg-[#FAF9F6]'
+                        }`}
+                      >
+                        <span className="truncate">{p.portugueseText}</span>
+                        {isMatched && <Check className="w-4 h-4 text-[#0D9488] shrink-0" />}
+                      </button>
+                    );
+                  })}
+                </div>
+
+                <div className="space-y-2.5">
+                  <span className="text-[11px] font-bold uppercase text-[#78716C] tracking-wider block">
+                    Sinal em Libras
+                  </span>
+                  {shuffledRightPairs.map((p) => {
+                    const isMatched = matchedPairIds.includes(p.id);
+                    const isSelected = selectedSignItem?.id === p.id;
+                    const isMismatch = mismatchPair?.signId === p.id;
+                    const pairSign = findCatalogSign(p.catalogSignId || p.signId);
+
+                    return (
+                      <button
+                        key={`sign-${p.id}`}
+                        type="button"
+                        disabled={isMatched || status !== 'idle'}
+                        onClick={() => handleSelectSignItem(p.id, p.signName)}
+                        aria-label={`Demonstração de sinal`}
+                        className={`tactile-btn w-full h-[108px] p-1.5 rounded-2xl border border-b-4 cursor-pointer flex items-center justify-center relative overflow-hidden transition-colors ${
+                          isMatched
+                            ? 'bg-[#F0FDFA] border-[#99F6E4] border-b-[#5EEAD4] opacity-55 cursor-not-allowed'
+                            : isMismatch
+                            ? 'bg-[#FFF1F2] border-[#FDA4AF] border-b-[#E11D48]'
+                            : isSelected
+                            ? 'bg-[#FFF1E6] border-[#EA580C] border-b-[#9A3412]'
+                            : 'bg-white border-[#E8E2D9] border-b-[#D6CFC5] hover:bg-[#FAF9F6]'
+                        }`}
+                      >
+                        <SignSchematicVisualizer
+                          sign={pairSign}
+                          mini={true}
+                          hideControls={true}
+                          className="w-full h-full pointer-events-none border-0 bg-transparent"
+                        />
+                        {isMatched && (
+                          <span className="absolute top-1.5 right-1.5 w-5 h-5 rounded-full bg-[#0D9488] text-white flex items-center justify-center">
+                            <Check className="w-3 h-3 stroke-[3]" />
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
+            {/* FORMAT 5: Prática na Câmera com MediaPipe Direcionado */}
+            {currentExercise.type === 'camera_practice' && (() => {
+              const targetSign = findCatalogSign(currentExercise.targetSignId || 'oi');
+              return (
+                <SingleTargetCameraExercise
+                  targetSign={targetSign}
+                  onPassed={(qualityPercent) => {
+                    if (status === 'idle') {
+                      setCameraScores((prev) => [...prev, qualityPercent]);
+                      setStatus('correct');
+                      setComboCount((prev) => prev + 1);
+                      setCorrectCount((prev) => prev + 1);
+                    }
+                  }}
+                  onSkipWithoutCamera={handleSkipCamera}
+                />
+              );
+            })()}
+
+            {/* FORMAT 6: Monte a Frase em Glosas */}
+            {(currentExercise.type === 'translate_to_libras' ||
+              currentExercise.type === 'fill_in_blank_sign') && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-4 py-1">
+                  <LibiMascot
+                    mood="ensinando"
+                    size="sm"
+                    showSpeechBubble={true}
+                    bubblePosition="side"
+                    speechText={currentExercise.portugueseSentence || ''}
+                  />
+                </div>
+
+                {currentExercise.glossSequence && currentExercise.glossSequence.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2 text-[11px] font-bold text-[#0F766E]">
+                    {currentExercise.glossSequence.map((_, sIdx) => (
+                      <span
+                        key={sIdx}
+                        className={`px-2 py-0.5 rounded-md border tabular-nums ${
+                          sIdx < selectedWords.length
+                            ? 'bg-[#F0FDFA] border-[#99F6E4] text-[#0F766E]'
+                            : 'bg-[#F3F0EA] border-[#E8E2D9] text-[#78716C]'
+                        }`}
+                      >
+                        {sIdx < selectedWords.length ? selectedWords[sIdx] : `${sIdx + 1}`}
+                      </span>
+                    ))}
+                  </div>
+                )}
+
+                <div className="min-h-[68px] p-3 rounded-2xl border-b-2 border-dashed border-[#D6CFC5] bg-white flex flex-wrap items-center gap-2">
+                  {selectedWords.length === 0 ? (
+                    <span className="text-xs font-semibold text-[#78716C]">
+                      Selecione os sinais na ordem da Libras
+                    </span>
+                  ) : (
+                    selectedWords.map((word, idx) => (
+                      <button
+                        key={`${word}-sel-${idx}`}
+                        type="button"
+                        disabled={status !== 'idle'}
+                        onClick={() => handleRemoveWord(word, idx)}
+                        className="tactile-btn px-3.5 py-2 rounded-xl bg-[#FFF1E6] border border-[#FED7AA] border-b-4 border-b-[#EA580C] text-[#9A3412] font-bold text-sm sm:text-base tracking-wide uppercase hover:bg-rose-50 cursor-pointer animate-scale-in"
+                      >
+                        {word}
+                      </button>
+                    ))
+                  )}
+                </div>
+
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {availableWords.map((word, idx) => (
+                    <button
+                      key={`${word}-bank-${idx}`}
+                      type="button"
+                      disabled={status !== 'idle'}
+                      onClick={() => handleWordClick(word, idx)}
+                      className="tactile-btn px-3.5 py-2 rounded-xl bg-white border border-[#E8E2D9] border-b-4 border-b-[#D6CFC5] text-[#1C1917] font-bold text-sm sm:text-base tracking-wide uppercase hover:bg-[#F3F0EA] cursor-pointer"
+                    >
+                      {word}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* FORMAT 7: Complete o Diálogo em Libras */}
+            {currentExercise.type === 'dialogue_completion' && currentExercise.dialoguePrompt && (
+              <div className="space-y-4">
+                <div className="bg-white rounded-2xl border border-[#E8E2D9] p-4 space-y-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-[#0F766E]">
+                      {currentExercise.dialoguePrompt.speaker}
+                    </span>
+                    <span className="text-[11px] font-bold text-[#EA580C]">
+                      {currentExercise.dialoguePrompt.nmfLabel}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                    <SignSchematicVisualizer
+                      sign={findCatalogSign(
+                        currentExercise.dialoguePrompt.catalogSignId || 'tudo-bem'
+                      )}
+                      compact={true}
+                      hideControls={true}
+                      facialExpression={currentExercise.dialoguePrompt.nmfType}
+                    />
+                    <div className="space-y-2">
+                      <div className="font-mono text-base sm:text-lg font-bold text-[#1C1917]">
+                        {currentExercise.dialoguePrompt.gloss}
+                      </div>
+                      <div className="text-sm font-medium text-[#57534E]">
+                        {currentExercise.dialoguePrompt.portuguese}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {currentExercise.options && (
+                  <div className="grid grid-cols-1 gap-2.5">
+                    {currentExercise.options.map((opt) => {
+                      const isSelected = selectedOptionId === opt.id;
+                      const optSign = findCatalogSign(opt.catalogSignId || 'oi');
+
+                      return (
+                        <button
+                          key={opt.id}
+                          type="button"
+                          disabled={status !== 'idle'}
+                          onClick={() => {
+                            soundService.playTap();
+                            setSelectedOptionId(opt.id);
+                          }}
+                          className={`tactile-btn p-3 rounded-2xl border border-b-4 text-left cursor-pointer flex items-center gap-3 transition-colors ${
+                            isSelected
+                              ? 'bg-[#FFF1E6] border-[#EA580C] border-b-[#9A3412]'
+                              : 'bg-white border-[#E8E2D9] border-b-[#D6CFC5] hover:bg-[#FAF9F6]'
+                          }`}
+                        >
+                          <div className="w-20 h-16 shrink-0 rounded-xl overflow-hidden bg-[#F0FDFA] border border-[#CCFBF1]">
+                            <SignSchematicVisualizer
+                              sign={optSign}
+                              mini={true}
+                              hideControls={true}
+                              className="w-full h-full border-0 bg-transparent pointer-events-none"
                             />
-                          ) : opt.glyph ? (
-                            <span className="text-3xl shrink-0">{opt.glyph}</span>
-                          ) : null}
-                          <div>
-                            <div className="font-black text-base">{opt.text}</div>
-                            {opt.explanation && <div className="text-xs text-[#78716C] font-medium">{opt.explanation}</div>}
+                          </div>
+                          <div className="min-w-0 space-y-0.5">
+                            {opt.gloss && (
+                              <div className="font-mono text-xs font-bold text-[#0F766E] truncate">
+                                {opt.gloss}
+                              </div>
+                            )}
+                            <div className="font-bold text-sm text-[#1C1917]">{opt.text}</div>
                           </div>
                         </button>
                       );
@@ -378,156 +938,9 @@ export const LessonPlayerModal: React.FC<LessonPlayerModalProps> = ({
               </div>
             )}
 
-            {/* 2. Dactylology / Manual Alphabet Spelling with visual hand graphics */}
-            {currentExercise.type === 'dactylology_spelling' && (
-              <div className="space-y-4">
-                <div className="p-4 rounded-3xl bg-[#FFF7ED] border-2 border-[#FED7AA] text-center space-y-2">
-                  <span className="text-xs font-black uppercase tracking-wider text-[#C2410C]">Palavra Alvo em Datilologia:</span>
-                  <div className="text-2xl sm:text-3xl font-black tracking-widest text-[#9A3412] font-mono">
-                    {currentExercise.targetGloss}
-                  </div>
-                  <div className="text-xs text-[#EA580C] font-semibold">{currentExercise.portugueseSentence}</div>
-                </div>
-
-                {/* Spelling Construction row */}
-                <div className="min-h-[64px] p-3 rounded-2xl border-b-2 border-dashed border-[#FED7AA] bg-[#FFFDF9] flex flex-wrap items-center justify-center gap-2">
-                  {selectedWords.map((word, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => handleRemoveWord(word, idx)}
-                      className="w-12 h-12 rounded-2xl bg-white border-2 border-[#F1EAE2] border-b-4 border-[#FED7AA] text-[#EA580C] font-black text-lg shadow-sm hover:bg-rose-50 hover:border-rose-300 transition-all cursor-pointer active:translate-y-0.5 animate-scale-in"
-                    >
-                      {word}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Available Letters */}
-                <div className="flex flex-wrap justify-center gap-2.5 pt-2">
-                  {availableWords.map((word, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => handleWordClick(word, idx)}
-                      className="w-12 h-12 rounded-2xl bg-white border-2 border-[#F1EAE2] border-b-4 border-[#FED7AA] text-[#292524] font-black text-lg shadow-sm hover:bg-[#FFF7ED] hover:border-[#FDBA74] transition-all cursor-pointer active:translate-y-1 flex flex-col items-center justify-center"
-                    >
-                      <span>{word}</span>
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* 3. Translate to Libras Grammar (Word Bank Tiles) with Signer Avatar */}
-            {currentExercise.type === 'translate_to_libras' && (
-              <div className="space-y-4">
-                <div className="flex items-center gap-4 py-2">
-                  <DuoOwl mood="signing_ily" size="sm" />
-                  <div className="bg-[#FFFDF9] border-2 border-[#F1EAE2] px-4 py-3 rounded-2xl font-black text-lg text-[#292524] shadow-inner flex-1">
-                    {currentExercise.portugueseSentence}
-                  </div>
-                </div>
-
-                {/* Assembled Sentence Row */}
-                <div className="min-h-[64px] p-3 rounded-2xl border-b-2 border-dashed border-[#FDBA74] bg-[#FFFDF9] flex flex-wrap items-center gap-2">
-                  {selectedWords.map((word, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => handleRemoveWord(word, idx)}
-                      className="px-4 py-2.5 rounded-2xl bg-white border-2 border-[#FED7AA] border-b-4 border-[#FDBA74] text-[#EA580C] font-black text-sm sm:text-base shadow-sm hover:bg-rose-50 hover:border-rose-300 transition-all cursor-pointer active:translate-y-0.5 animate-scale-in"
-                    >
-                      {word}
-                    </button>
-                  ))}
-                </div>
-
-                {/* Available Word Bank */}
-                <div className="flex flex-wrap gap-2 sm:gap-2.5 pt-2">
-                  {availableWords.map((word, idx) => (
-                    <button
-                      key={idx}
-                      onClick={() => handleWordClick(word, idx)}
-                      className="px-4 py-2.5 rounded-2xl bg-white border-2 border-[#F1EAE2] border-b-4 border-[#FED7AA] text-[#292524] font-black text-sm sm:text-base shadow-sm hover:bg-[#FFF7ED] hover:border-[#FDBA74] transition-all cursor-pointer active:translate-y-1"
-                    >
-                      {word}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* 4. Match Sign Pairs */}
-            {currentExercise.type === 'match_sign_pairs' && currentExercise.matchPairs && (
-              <div className="grid grid-cols-2 gap-3 pt-2">
-                
-                {/* Sign Column */}
-                <div className="space-y-2">
-                  <span className="text-[11px] font-black uppercase text-[#A8A29E] tracking-wider">Sinal / Gestos</span>
-                  {currentExercise.matchPairs.map((p) => {
-                    const isMatched = matchedPairIds.includes(p.id);
-                    const isSelected = selectedSignItem?.id === p.id;
-                    return (
-                      <button
-                        key={p.id}
-                        disabled={isMatched}
-                        onClick={() => handleSelectSignItem(p.id, p.signName)}
-                        className={`
-                          w-full py-3.5 px-3 rounded-2xl border-2 border-b-6 font-black text-sm text-left transition-all cursor-pointer active:translate-y-0.5 flex items-center gap-2.5
-                          ${isMatched 
-                            ? 'bg-[#E7E5E4] text-[#A8A29E] border-[#D6D3D1] border-b-[#A8A29E] cursor-not-allowed opacity-50' 
-                            : isSelected
-                            ? 'bg-[#FFEDD5] text-[#C2410C] border-[#FF6B00] border-b-[#9A3412]'
-                            : 'bg-white text-[#292524] border-[#F1EAE2] border-b-[#FED7AA] hover:bg-[#FFF7ED]'}
-                        `}
-                      >
-                        {p.realImageUrl ? (
-                          <img 
-                            src={p.realImageUrl} 
-                            alt={p.signName} 
-                            className="w-10 h-10 rounded-xl object-cover shrink-0 border border-[#FED7AA] shadow-xs" 
-                          />
-                        ) : (
-                          <span className="text-2xl">{p.signGlyph}</span>
-                        )}
-                        <div>
-                          <div className="font-black text-xs sm:text-sm">{p.signName}</div>
-                          <div className="text-[10px] text-[#78716C]">{p.handshape}</div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {/* Meaning Column */}
-                <div className="space-y-2">
-                  <span className="text-[11px] font-black uppercase text-[#A8A29E] tracking-wider">Português</span>
-                  {currentExercise.matchPairs.map((p) => {
-                    const isMatched = matchedPairIds.includes(p.id);
-                    const isSelected = selectedWordItem?.id === p.id;
-                    return (
-                      <button
-                        key={p.id}
-                        disabled={isMatched}
-                        onClick={() => handleSelectWordItem(p.id, p.portugueseText)}
-                        className={`
-                          w-full py-4 px-4 rounded-2xl border-2 border-b-6 font-black text-sm text-left transition-all cursor-pointer active:translate-y-0.5
-                          ${isMatched 
-                            ? 'bg-[#E7E5E4] text-[#A8A29E] border-[#D6D3D1] border-b-[#A8A29E] cursor-not-allowed opacity-50' 
-                            : isSelected
-                            ? 'bg-[#FFEDD5] text-[#C2410C] border-[#FF6B00] border-b-[#9A3412]'
-                            : 'bg-white text-[#292524] border-[#F1EAE2] border-b-[#FED7AA] hover:bg-[#FFF7ED]'}
-                        `}
-                      >
-                        {p.portugueseText}
-                      </button>
-                    );
-                  })}
-                </div>
-
-              </div>
-            )}
-
-            {/* 5. Parameter Quiz (CM, PA, M, NMF) with visual diagram */}
-            {(currentExercise.type === 'parameter_quiz' || currentExercise.type === 'nmf_facial_quiz') && (
+            {/* Legacy Parameter & NMF Quiz */}
+            {(currentExercise.type === 'parameter_quiz' ||
+              currentExercise.type === 'nmf_facial_quiz') && (
               <div className="space-y-4 pt-1">
                 {currentExercise.sign && (
                   <SignDemonstrationVisual
@@ -543,22 +956,19 @@ export const LessonPlayerModal: React.FC<LessonPlayerModalProps> = ({
                       return (
                         <button
                           key={opt.id}
+                          type="button"
+                          disabled={status !== 'idle'}
                           onClick={() => {
                             soundService.playTap();
                             setSelectedOptionId(opt.id);
                           }}
-                          className={`
-                            p-4 rounded-2xl border-2 border-b-4 text-left font-black text-sm transition-all cursor-pointer active:translate-y-0.5 flex items-center gap-3
-                            ${isSelected
-                              ? 'bg-[#FFF7ED] text-[#EA580C] border-[#FF6B00] border-b-[#9A3412]'
-                              : 'bg-white text-[#292524] border-[#F1EAE2] border-b-[#FED7AA] hover:bg-[#FFF7ED]'}
-                          `}
+                          className={`tactile-btn p-4 rounded-2xl border border-b-4 text-left font-bold text-sm cursor-pointer flex items-center gap-3 ${
+                            isSelected
+                              ? 'bg-[#FFF1E6] text-[#9A3412] border-[#EA580C] border-b-[#9A3412]'
+                              : 'bg-white text-[#1C1917] border-[#E8E2D9] border-b-[#D6CFC5] hover:bg-[#FAF9F6]'
+                          }`}
                         >
-                          {opt.glyph && <span className="text-2xl shrink-0">{opt.glyph}</span>}
-                          <div>
-                            <div>{opt.text}</div>
-                            {opt.explanation && <div className="text-xs text-[#78716C] font-medium">{opt.explanation}</div>}
-                          </div>
+                          <div>{opt.text}</div>
                         </button>
                       );
                     })}
@@ -567,22 +977,26 @@ export const LessonPlayerModal: React.FC<LessonPlayerModalProps> = ({
               </div>
             )}
 
-            {/* 6. Story Dialogue in Libras */}
+            {/* Legacy Story Dialogue */}
             {currentExercise.type === 'story_dialogue' && currentExercise.storyLines && (
               <div className="space-y-4 pt-2">
-                <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-2">
+                <div className="space-y-3 max-h-[50vh] overflow-y-auto pr-1">
                   {currentExercise.storyLines.slice(0, storyLineIndex + 1).map((line, idx) => (
-                    <div key={idx} className="flex items-start gap-3 p-3.5 rounded-2xl bg-[#FFF7ED] border border-[#FED7AA] animate-fade-in">
-                      <span className="text-3xl shrink-0">{line.avatar}</span>
+                    <div
+                      key={idx}
+                      className="flex items-start gap-3 p-4 rounded-2xl bg-white border border-[#E8E2D9] animate-fade-in"
+                    >
+                      <div className="w-9 h-9 rounded-xl bg-[#F0FDFA] text-[#0F766E] border border-[#99F6E4] flex items-center justify-center font-bold text-xs shrink-0">
+                        {line.speaker.slice(0, 2).toUpperCase()}
+                      </div>
                       <div className="space-y-1">
-                        <div className="font-black text-xs text-[#EA580C]">{line.speaker}</div>
-                        <div className="font-black text-base text-[#292524] font-mono tracking-wide">{line.librasSentence}</div>
-                        <div className="text-xs text-[#78716C] font-medium">Tradução: {line.portugueseSentence}</div>
-                        {line.signExplanation && (
-                          <div className="text-[11px] text-[#C2410C] bg-white/80 px-2 py-1 rounded-lg border border-[#FED7AA] mt-1">
-                            💡 {line.signExplanation}
-                          </div>
-                        )}
+                        <div className="font-bold text-xs text-[#0F766E]">{line.speaker}</div>
+                        <div className="font-bold text-base text-[#1C1917] font-mono tracking-wide">
+                          {line.librasSentence}
+                        </div>
+                        <div className="text-xs text-[#57534E] font-medium">
+                          {line.portugueseSentence}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -590,99 +1004,119 @@ export const LessonPlayerModal: React.FC<LessonPlayerModalProps> = ({
 
                 {storyLineIndex < currentExercise.storyLines.length - 1 ? (
                   <button
+                    type="button"
                     onClick={() => {
                       soundService.playTap();
-                      setStoryLineIndex(storyLineIndex + 1);
+                      setStoryLineIndex((prev) => prev + 1);
                     }}
-                    className="w-full py-3 rounded-2xl bg-[#FF6B00] hover:bg-[#EA580C] text-white font-black text-xs uppercase tracking-wider border-b-4 border-[#9A3412] cursor-pointer shadow-sm"
+                    className="tactile-btn w-full py-3 rounded-2xl bg-[#0D9488] hover:bg-[#0F766E] text-white font-bold text-xs uppercase tracking-wider border-b-4 border-[#115E59] cursor-pointer"
                   >
-                    Próxima Fala em Libras 🤟
+                    Próxima fala
                   </button>
                 ) : (
-                  <div className="p-4 rounded-2xl bg-[#FFEDD5] text-[#EA580C] font-black text-xs text-center border-2 border-[#FDBA74]">
-                    Diálogo em Libras completo! Toque em Continuar.
+                  <div className="p-3.5 rounded-2xl bg-[#F0FDFA] text-[#0F766E] font-bold text-xs text-center border border-[#99F6E4]">
+                    Diálogo concluído. Toque em verificar.
                   </div>
                 )}
               </div>
             )}
-
           </div>
         )}
-
       </main>
 
-      {/* 3. Bottom Verification & Feedback Sheet */}
+      {/* 3. Fixed Bottom Verification & Libi Feedback Sheet */}
       {status !== 'completed' && status !== 'out_of_hearts' && (
-        <footer className={`
-          border-t-2 py-4 sm:py-6 px-4 transition-colors duration-200
-          ${status === 'correct' 
-            ? 'bg-[#FFEDD5] border-[#FDBA74] text-[#C2410C]' 
-            : status === 'incorrect' 
-            ? 'bg-[#FFE4E6] border-[#FECDD3] text-[#E11D48]' 
-            : 'bg-white border-[#F1EAE2]'}
-        `}>
-          <div className="max-w-2xl mx-auto flex items-center justify-between gap-4">
-            
-            {/* Feedback message */}
+        <footer
+          className={`border-t py-4 sm:py-5 px-4 transition-colors duration-200 shrink-0 ${
+            status === 'correct'
+              ? 'bg-[#F0FDFA] border-[#99F6E4] text-[#0F766E]'
+              : status === 'incorrect'
+              ? 'bg-[#FFF1F2] border-[#FECDD3] text-[#BE123C]'
+              : 'bg-white border-[#E8E2D9]'
+          }`}
+        >
+          <div className="max-w-3xl mx-auto flex flex-col sm:flex-row sm:items-center justify-between gap-3">
             {status === 'correct' && (
               <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-[#FF6B00] text-white flex items-center justify-center text-xl shadow-sm">
-                  🤟
-                </div>
+                <LibiMascot mood="comemorando" size="xs" />
                 <div>
-                  <h3 className="text-xl font-black">Sinalização Perfeita!</h3>
-                  <p className="text-xs font-bold text-[#EA580C]">Você acertou o sinal e os parâmetros!</p>
-                </div>
-              </div>
-            )}
-
-            {status === 'incorrect' && (
-              <div className="flex items-center gap-3">
-                <div className="w-12 h-12 rounded-full bg-[#E11D48] text-white flex items-center justify-center">
-                  <AlertCircle className="w-7 h-7" />
-                </div>
-                <div className="space-y-0.5">
-                  <h3 className="text-xl font-black">Resposta correta:</h3>
-                  <p className="text-xs font-bold text-[#BE123C]">
-                    {currentExercise?.correctAnswers[0] || 'Tente novamente'}
+                  <h3 className="font-display text-lg sm:text-xl font-bold text-[#0F766E]">
+                    Muito bem!
+                  </h3>
+                  <p className="text-xs font-semibold text-[#115E59]">
+                    Resposta correta.
                   </p>
                 </div>
               </div>
             )}
 
-            {status === 'idle' && (
-              <div className="hidden sm:flex items-center gap-2 text-xs font-bold text-[#A8A29E]">
-                <span>Assista ao vídeo demonstrativo e toque em verificar</span>
+            {status === 'incorrect' && (
+              <div className="flex items-start gap-3">
+                <LibiMascot mood="incentivando" size="xs" />
+                <div className="space-y-0.5 min-w-0">
+                  <h3 className="font-display text-base sm:text-lg font-bold text-[#BE123C]">
+                    Resposta certa: {currentExercise?.correctAnswers[0]}
+                  </h3>
+                </div>
               </div>
             )}
 
-            {/* Action button */}
-            <div className="w-full sm:w-auto flex justify-end">
+            {status === 'idle' && (
+              <div className="hidden sm:flex items-center gap-2 text-xs font-semibold text-[#78716C]">
+                <span>
+                  {currentExercise?.type === 'camera_practice'
+                    ? 'Alcance 80% na câmera ou pule sem perder vidas'
+                    : currentExercise?.type === 'match_sign_pairs'
+                    ? `Pares combinados: ${matchedPairIds.length}/${
+                        currentExercise.matchPairs?.length || 4
+                      }`
+                    : 'Selecione sua resposta e toque em verificar'}
+                </span>
+              </div>
+            )}
+
+            <div className="w-full sm:w-auto flex justify-end shrink-0">
               {status === 'idle' ? (
-                <button
-                  onClick={handleCheckAnswer}
-                  className="w-full sm:w-48 py-3.5 px-6 rounded-2xl bg-[#FF6B00] hover:bg-[#EA580C] text-white font-black text-sm uppercase tracking-wider border-b-6 border-[#9A3412] cursor-pointer shadow-md transition-all active:translate-y-1"
-                >
-                  Verificar
-                </button>
+                currentExercise?.type === 'camera_practice' ? (
+                  <button
+                    type="button"
+                    onClick={handleSkipCamera}
+                    className="tactile-btn w-full sm:w-auto py-3 px-5 rounded-2xl bg-[#F3F0EA] hover:bg-[#E8E2D9] text-[#57534E] font-bold text-xs uppercase tracking-wider border border-[#D6CFC5] border-b-4 cursor-pointer"
+                  >
+                    Não posso usar a câmera agora
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    disabled={!canCheckCurrent}
+                    onClick={handleCheckAnswer}
+                    className={`tactile-btn w-full sm:w-44 py-3.5 px-6 rounded-2xl font-bold text-sm uppercase tracking-wider border-b-4 transition-colors ${
+                      canCheckCurrent
+                        ? 'bg-[#EA580C] hover:bg-[#DC4F06] text-white border-[#9A3412] cursor-pointer'
+                        : 'bg-[#E8E2D9] text-[#78716C] border-[#D6CFC5] cursor-not-allowed'
+                    }`}
+                  >
+                    Verificar
+                  </button>
+                )
               ) : (
                 <button
+                  type="button"
                   onClick={handleContinue}
-                  className={`
-                    w-full sm:w-48 py-3.5 px-6 rounded-2xl text-white font-black text-sm uppercase tracking-wider border-b-6 cursor-pointer shadow-md transition-all active:translate-y-1 flex items-center justify-center gap-2
-                    ${status === 'correct' ? 'bg-[#FF6B00] hover:bg-[#EA580C] border-[#9A3412]' : 'bg-[#E11D48] hover:bg-[#BE123C] border-[#9F1239]'}
-                  `}
+                  className={`tactile-btn w-full sm:w-44 py-3.5 px-6 rounded-2xl text-white font-bold text-sm uppercase tracking-wider border-b-4 cursor-pointer flex items-center justify-center gap-2 ${
+                    status === 'correct'
+                      ? 'bg-[#0D9488] hover:bg-[#0F766E] border-[#115E59]'
+                      : 'bg-[#E11D48] hover:bg-[#BE123C] border-[#9F1239]'
+                  }`}
                 >
                   <span>Continuar</span>
                   <ArrowRight className="w-4 h-4" />
                 </button>
               )}
             </div>
-
           </div>
         </footer>
       )}
-
     </div>
   );
 };

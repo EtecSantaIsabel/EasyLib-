@@ -1,0 +1,384 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Private authenticated EasyLib learner profile including XP, gems, streak, completed lessons, and PII email.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "description": "Firebase Auth UID of the user",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "Verified Google account email (private PII)",
+          "maxLength": 254
+        },
+        "name": {
+          "type": "string",
+          "description": "Display name",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "username": {
+          "type": "string",
+          "description": "Handle shown on profile and leaderboard",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "avatar": {
+          "type": "string",
+          "description": "Avatar emoji or short token",
+          "minLength": 1,
+          "maxLength": 16
+        },
+        "selectedTrack": {
+          "type": "string",
+          "enum": ["iniciante", "intermediario", "avancado", "gramatica_nmf"],
+          "description": "Active Libras learning track"
+        },
+        "xp": {
+          "type": "number",
+          "description": "Total accumulated XP"
+        },
+        "gems": {
+          "type": "number",
+          "description": "In-app gems balance"
+        },
+        "hearts": {
+          "type": "number",
+          "description": "Remaining lesson hearts"
+        },
+        "maxHearts": {
+          "type": "number",
+          "description": "Maximum hearts capacity"
+        },
+        "streakDays": {
+          "type": "number",
+          "description": "Current daily streak count"
+        },
+        "hasActiveStreakFreeze": {
+          "type": "boolean",
+          "description": "Whether streak freeze is active"
+        },
+        "streakFreezeCount": {
+          "type": "number",
+          "description": "Number of owned streak freezes"
+        },
+        "isSuperDuolingo": {
+          "type": "boolean",
+          "description": "EasyLib Plus status"
+        },
+        "completedNodeIds": {
+          "type": "array",
+          "description": "IDs of completed learning path nodes"
+        },
+        "learnedSignIds": {
+          "type": "array",
+          "description": "IDs of learned Libras signs"
+        },
+        "favoriteSignIds": {
+          "type": "array",
+          "description": "IDs of favorited Libras signs"
+        },
+        "currentLeague": {
+          "type": "string",
+          "enum": [
+            "Bronze",
+            "Prata",
+            "Ouro",
+            "Safira",
+            "Rubi",
+            "Esmeralda",
+            "Ametista",
+            "Pérola",
+            "Obsidiana",
+            "Diamante"
+          ],
+          "description": "Current weekly league tier"
+        },
+        "duoOutfit": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "unlockedOutfits": {
+          "type": "array",
+          "description": "IDs of unlocked mascot outfits"
+        },
+        "wagerActive": {
+          "type": "boolean"
+        },
+        "wagerDaysLeft": {
+          "type": "number"
+        },
+        "claimedQuestIds": {
+          "type": "array",
+          "description": "IDs of claimed daily quests"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server creation timestamp"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Server last update timestamp"
+        }
+      },
+      "required": [
+        "uid",
+        "email",
+        "name",
+        "username",
+        "avatar",
+        "selectedTrack",
+        "xp",
+        "gems",
+        "hearts",
+        "maxHearts",
+        "streakDays",
+        "hasActiveStreakFreeze",
+        "streakFreezeCount",
+        "isSuperDuolingo",
+        "completedNodeIds",
+        "learnedSignIds",
+        "favoriteSignIds",
+        "currentLeague",
+        "duoOutfit",
+        "unlockedOutfits",
+        "wagerActive",
+        "wagerDaysLeft",
+        "claimedQuestIds",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "LeaderboardEntry": {
+      "title": "LeaderboardEntry",
+      "description": "Public non-PII ranking entry for weekly league leaderboards.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "username": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "avatar": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16
+        },
+        "xp": {
+          "type": "number"
+        },
+        "streakDays": {
+          "type": "number"
+        },
+        "currentLeague": {
+          "type": "string",
+          "enum": [
+            "Bronze",
+            "Prata",
+            "Ouro",
+            "Safira",
+            "Rubi",
+            "Esmeralda",
+            "Ametista",
+            "Pérola",
+            "Obsidiana",
+            "Diamante"
+          ]
+        },
+        "isPublic": {
+          "type": "boolean"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "userId",
+        "name",
+        "username",
+        "avatar",
+        "xp",
+        "streakDays",
+        "currentLeague",
+        "isPublic",
+        "updatedAt"
+      ]
+    },
+    "SavedTranslation": {
+      "title": "SavedTranslation",
+      "description": "Libras camera sign sequence and Portuguese translation saved by the user.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "glosses": {
+          "type": "array",
+          "description": "Bounded list of recognized Libras gloss strings"
+        },
+        "portugueseText": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "nmfExpression": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["userId", "glosses", "portugueseText", "nmfExpression", "createdAt"]
+    },
+    "Room": {
+      "title": "Room",
+      "description": "Closed ranking room identified by a unique room code. Listing is forbidden; users can only fetch an exact room code they possess.",
+      "type": "object",
+      "properties": {
+        "roomCode": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 12
+        },
+        "name": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 60
+        },
+        "ownerUid": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["roomCode", "name", "ownerUid", "createdAt", "updatedAt"]
+    },
+    "RoomMember": {
+      "title": "RoomMember",
+      "description": "Verified participant who joined a specific closed room using its unique code.",
+      "type": "object",
+      "properties": {
+        "roomCode": {
+          "type": "string",
+          "minLength": 6,
+          "maxLength": 12
+        },
+        "userId": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80
+        },
+        "username": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "avatar": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 16
+        },
+        "xp": {
+          "type": "number"
+        },
+        "streakDays": {
+          "type": "number"
+        },
+        "currentLeague": {
+          "type": "string",
+          "enum": [
+            "Bronze",
+            "Prata",
+            "Ouro",
+            "Safira",
+            "Rubi",
+            "Esmeralda",
+            "Ametista",
+            "Pérola",
+            "Obsidiana",
+            "Diamante"
+          ]
+        },
+        "joinedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "roomCode",
+        "userId",
+        "name",
+        "username",
+        "avatar",
+        "xp",
+        "streakDays",
+        "currentLeague",
+        "joinedAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "Private learner progress and account data, strictly readable/writable only by the owning verified user."
+    },
+    "/leaderboard/{userId}": {
+      "schema": { "$ref": "#/entities/LeaderboardEntry" },
+      "description": "Public ranking summary document without PII, readable by signed-in users where isPublic is true."
+    },
+    "/users/{userId}/translations/{translationId}": {
+      "schema": { "$ref": "#/entities/SavedTranslation" },
+      "description": "Saved camera sign translations belonging to a specific user."
+    },
+    "/rooms/{roomCode}": {
+      "schema": { "$ref": "#/entities/Room" },
+      "description": "Closed ranking rooms indexed strictly by unique code (list forbidden)."
+    },
+    "/rooms/{roomCode}/members/{userId}": {
+      "schema": { "$ref": "#/entities/RoomMember" },
+      "description": "Real participants who joined a valid closed room using its exact code."
+    }
+  }
+}

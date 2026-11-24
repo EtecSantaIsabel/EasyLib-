@@ -1,16 +1,15 @@
 import React, { useState } from 'react';
-import { 
-  Sparkles, 
-  Heart, 
-  Flame, 
-  Gem, 
-  Check, 
-  ShieldCheck, 
+import {
+  Heart,
+  Flame,
+  Gem,
+  ShieldCheck,
   Zap,
   ShoppingBag
 } from 'lucide-react';
 import { UserProfile, DuoOutfit } from '../types';
 import { DUO_OUTFITS } from '../data/librasData';
+import { LibiMascot } from '../components/LibiMascot';
 import { soundService } from '../services/soundService';
 
 interface ShopViewProps {
@@ -36,12 +35,12 @@ export const ShopView: React.FC<ShopViewProps> = ({
   const handleBuyPowerup = (type: 'hearts' | 'freeze' | 'wager', cost: number) => {
     if (userProfile.gems < cost) {
       soundService.playIncorrect();
-      showToast('Gemas insuficientes! Complete lições para ganhar mais.');
+      showToast('Gemas insuficientes. Conclua lições para ganhar mais.');
       return;
     }
     soundService.playCorrect();
     onBuyItem(type, cost);
-    showToast('Compra realizada com sucesso!');
+    showToast('Item adquirido com sucesso.');
   };
 
   const handleOutfitAction = (outfit: DuoOutfit) => {
@@ -49,79 +48,80 @@ export const ShopView: React.FC<ShopViewProps> = ({
     if (isUnlocked) {
       soundService.playTap();
       onEquipOutfit(outfit.id);
-      showToast(`${outfit.name} equipado!`);
+      showToast(`${outfit.name} equipado.`);
     } else {
       if (userProfile.gems < outfit.price) {
         soundService.playIncorrect();
-        showToast('Gemas insuficientes para este traje.');
+        showToast('Gemas insuficientes para este item.');
         return;
       }
       soundService.playLessonComplete();
       onBuyItem(outfit.id, outfit.price);
       onEquipOutfit(outfit.id);
-      showToast(`${outfit.name} desbloqueado e equipado!`);
+      showToast(`${outfit.name} liberado e equipado.`);
     }
   };
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-4 space-y-8 select-none animate-fade-in">
-      
-      {/* Toast message */}
+    <div className="max-w-xl mx-auto px-2 sm:px-4 py-2 space-y-6 select-none animate-fade-in">
       {feedbackMsg && (
-        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-[#1E1E1E] text-white font-black text-xs px-5 py-3 rounded-2xl shadow-2xl border border-white/20 animate-fade-in">
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-[#1C1917] text-white font-bold text-xs px-5 py-3 rounded-xl shadow-lg animate-fade-in">
           {feedbackMsg}
         </div>
       )}
 
-      {/* EasyLib Plus Feature Promo Card (Warm Sunset Card) */}
-      <div className="bg-gradient-to-r from-[#FF6B00] via-[#F97316] to-[#EA580C] rounded-3xl p-6 text-white border-b-6 border-[#9A3412] shadow-xl space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Sparkles className="w-6 h-6 text-yellow-300" />
-            <span className="text-xs font-black uppercase tracking-widest bg-white/20 px-3 py-1 rounded-full text-[#FEF3C7]">
+      {/* EasyLib Plus Banner */}
+      <div className="bg-[#0D9488] rounded-2xl p-5 sm:p-6 text-white border-b-4 border-[#0F766E] space-y-4">
+        <div className="flex items-center justify-between gap-4">
+          <div className="space-y-1">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-[#CCFBF1]">
               EasyLib Plus
             </span>
+            <h2 className="font-display text-2xl font-bold">
+              Vidas ilimitadas nos treinos
+            </h2>
+            <p className="text-xs text-white/90 font-medium">
+              Pratique quantas vezes quiser sem perder vidas ao errar um sinal.
+            </p>
           </div>
-          <span className="text-2xl">🦉✨</span>
-        </div>
-
-        <div className="space-y-1">
-          <h2 className="text-2xl sm:text-3xl font-black">Vidas Ilimitadas & Prática Sem Limites</h2>
-          <p className="text-xs text-white/95 font-medium">
-            Aprenda no seu ritmo sem interrupções, com revisões personalizadas de parâmetros e expressões.
-          </p>
+          <LibiMascot mood="comemorando" size="sm" />
         </div>
 
         <button
           onClick={() => {
             soundService.playLessonComplete();
             onToggleSuper();
-            showToast(userProfile.isSuperDuolingo ? 'EasyLib Plus desativado.' : 'EasyLib Plus ativado gratuitamente!');
+            showToast(
+              userProfile.isSuperDuolingo
+                ? 'EasyLib Plus desativado.'
+                : 'EasyLib Plus ativado!'
+            );
           }}
-          className="w-full py-3.5 px-4 rounded-2xl bg-white text-[#EA580C] hover:bg-orange-50 font-black text-sm uppercase tracking-wider border-b-4 border-[#FED7AA] cursor-pointer shadow-md transition-all active:translate-y-0.5"
+          className="tactile-btn w-full py-3 px-4 rounded-xl bg-white text-[#0F766E] hover:bg-[#F0FDFA] font-bold text-xs uppercase tracking-wider border-b-4 border-[#99F6E4] cursor-pointer"
         >
-          {userProfile.isSuperDuolingo ? 'Desativar EasyLib Plus' : 'Ativar EasyLib Plus Grátis'}
+          {userProfile.isSuperDuolingo ? 'Desativar Plus' : 'Ativar EasyLib Plus'}
         </button>
       </div>
 
-      {/* Power-ups Section */}
-      <div className="space-y-4">
+      {/* Power-ups */}
+      <div className="space-y-3">
         <div className="flex items-center gap-2">
           <Zap className="w-5 h-5 text-[#EA580C]" />
-          <h3 className="text-xl font-black text-[#292524]">Itens e Poderes</h3>
+          <h3 className="font-display text-lg font-bold text-[#1C1917]">Itens</h3>
         </div>
 
-        <div className="space-y-3">
-          
+        <div className="bg-white rounded-2xl border border-[#E8E2D9] divide-y divide-[#E8E2D9]">
           {/* Refill Hearts */}
-          <div className="bg-white rounded-3xl border-2 border-[#F1EAE2] border-b-6 border-[#FED7AA] p-5 flex items-center justify-between gap-4 shadow-sm">
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-2xl bg-[#FFE4E6] text-[#E11D48] flex items-center justify-center text-2xl border border-[#FECDD3] shrink-0">
-                ❤️
+          <div className="p-4 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5 min-w-0">
+              <div className="w-11 h-11 rounded-xl bg-[#FFF1F2] text-[#E11D48] flex items-center justify-center shrink-0">
+                <Heart className="w-5 h-5 fill-current" />
               </div>
-              <div className="space-y-0.5">
-                <h4 className="font-black text-base text-[#292524]">Recarga de Vidas</h4>
-                <p className="text-xs text-[#78716C] font-semibold">Restaura todas as suas 5 vidas instantaneamente.</p>
+              <div className="space-y-0.5 min-w-0">
+                <h4 className="font-bold text-sm text-[#1C1917]">Recarga de vidas</h4>
+                <p className="text-xs text-[#57534E]">
+                  Restaura todas as 5 vidas agora mesmo.
+                </p>
               </div>
             </div>
 
@@ -129,45 +129,51 @@ export const ShopView: React.FC<ShopViewProps> = ({
               disabled={userProfile.hearts >= userProfile.maxHearts || userProfile.isSuperDuolingo}
               onClick={() => handleBuyPowerup('hearts', 350)}
               className={`
-                px-4 py-2.5 rounded-2xl font-black text-xs uppercase tracking-wider border-b-4 shrink-0 transition-all
+                tactile-btn px-3.5 py-2 rounded-xl font-bold text-xs border-b-[3px] shrink-0 flex items-center gap-1
                 ${userProfile.hearts >= userProfile.maxHearts || userProfile.isSuperDuolingo
-                  ? 'bg-[#E7E5E4] text-[#A8A29E] border-[#D6D3D1] cursor-not-allowed'
-                  : 'bg-[#FF6B00] hover:bg-[#EA580C] text-white border-[#9A3412] cursor-pointer active:translate-y-0.5 shadow-md'}
+                  ? 'bg-[#E8E2D9] text-[#78716C] border-[#D6CFC5] cursor-not-allowed'
+                  : 'bg-[#EA580C] hover:bg-[#DC4F06] text-white border-[#9A3412] cursor-pointer'}
               `}
             >
-              350 💎
+              <span>350</span>
+              <Gem className="w-3.5 h-3.5 fill-current" />
             </button>
           </div>
 
           {/* Streak Freeze */}
-          <div className="bg-white rounded-3xl border-2 border-[#F1EAE2] border-b-6 border-[#FED7AA] p-5 flex items-center justify-between gap-4 shadow-sm">
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-2xl bg-[#FFEDD5] text-[#EA580C] flex items-center justify-center text-2xl border border-[#FDBA74] shrink-0">
-                🧊
+          <div className="p-4 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5 min-w-0">
+              <div className="w-11 h-11 rounded-xl bg-[#F0FDFA] text-[#0D9488] flex items-center justify-center shrink-0">
+                <ShieldCheck className="w-5 h-5" />
               </div>
-              <div className="space-y-0.5">
-                <h4 className="font-black text-base text-[#292524]">Bloqueio de Ofensiva</h4>
-                <p className="text-xs text-[#78716C] font-semibold">Protege sua chama de ofensiva se você esquecer de praticar 1 dia.</p>
+              <div className="space-y-0.5 min-w-0">
+                <h4 className="font-bold text-sm text-[#1C1917]">Bloqueio de ofensiva</h4>
+                <p className="text-xs text-[#57534E]">
+                  Protege sua sequência caso você falte 1 dia.
+                </p>
               </div>
             </div>
 
             <button
               onClick={() => handleBuyPowerup('freeze', 200)}
-              className="px-4 py-2.5 rounded-2xl bg-[#F59E0B] hover:bg-[#D97706] text-white font-black text-xs uppercase tracking-wider border-b-4 border-[#92400E] shrink-0 cursor-pointer active:translate-y-0.5 shadow-md transition-all"
+              className="tactile-btn px-3.5 py-2 rounded-xl bg-[#0D9488] hover:bg-[#0F766E] text-white font-bold text-xs border-b-[3px] border-[#115E59] shrink-0 cursor-pointer flex items-center gap-1"
             >
-              200 💎
+              <span>200</span>
+              <Gem className="w-3.5 h-3.5 fill-current" />
             </button>
           </div>
 
           {/* Double or Nothing */}
-          <div className="bg-white rounded-3xl border-2 border-[#F1EAE2] border-b-6 border-[#FED7AA] p-5 flex items-center justify-between gap-4 shadow-sm">
-            <div className="flex items-center gap-4">
-              <div className="w-14 h-14 rounded-2xl bg-[#FFEDD5] text-[#EA580C] flex items-center justify-center text-2xl border border-[#FDBA74] shrink-0">
-                🎰
+          <div className="p-4 flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3.5 min-w-0">
+              <div className="w-11 h-11 rounded-xl bg-[#FFF1E6] text-[#EA580C] flex items-center justify-center shrink-0">
+                <Flame className="w-5 h-5" />
               </div>
-              <div className="space-y-0.5">
-                <h4 className="font-black text-base text-[#292524]">Dobre ou Nada</h4>
-                <p className="text-xs text-[#78716C] font-semibold">Aposte 50 gemas. Mantenha 7 dias de ofensiva e ganhe 100 gemas!</p>
+              <div className="space-y-0.5 min-w-0">
+                <h4 className="font-bold text-sm text-[#1C1917]">Desafio 7 dias</h4>
+                <p className="text-xs text-[#57534E]">
+                  Aposte 50 gemas. Complete 7 dias seguidos para ganhar 100.
+                </p>
               </div>
             </div>
 
@@ -175,27 +181,33 @@ export const ShopView: React.FC<ShopViewProps> = ({
               disabled={userProfile.wagerActive}
               onClick={() => handleBuyPowerup('wager', 50)}
               className={`
-                px-4 py-2.5 rounded-2xl font-black text-xs uppercase tracking-wider border-b-4 shrink-0 transition-all
+                tactile-btn px-3.5 py-2 rounded-xl font-bold text-xs border-b-[3px] shrink-0 flex items-center gap-1
                 ${userProfile.wagerActive
-                  ? 'bg-[#E7E5E4] text-[#A8A29E] border-[#D6D3D1] cursor-not-allowed'
-                  : 'bg-[#EA580C] hover:bg-[#C2410C] text-white border-[#9A3412] cursor-pointer active:translate-y-0.5 shadow-md'}
+                  ? 'bg-[#E8E2D9] text-[#78716C] border-[#D6CFC5] cursor-not-allowed'
+                  : 'bg-[#EA580C] hover:bg-[#DC4F06] text-white border-[#9A3412] cursor-pointer'}
               `}
             >
-              {userProfile.wagerActive ? 'Ativo' : '50 💎'}
+              {userProfile.wagerActive ? (
+                <span>Ativo</span>
+              ) : (
+                <>
+                  <span>50</span>
+                  <Gem className="w-3.5 h-3.5 fill-current" />
+                </>
+              )}
             </button>
           </div>
-
         </div>
       </div>
 
-      {/* Duo Mascot Outfits Section */}
-      <div className="space-y-4">
+      {/* Mascot Outfits */}
+      <div className="space-y-3">
         <div className="flex items-center gap-2">
-          <ShoppingBag className="w-5 h-5 text-[#EA580C]" />
-          <h3 className="text-xl font-black text-[#292524]">Trajes do Mascote EasyLib</h3>
+          <ShoppingBag className="w-5 h-5 text-[#0D9488]" />
+          <h3 className="font-display text-lg font-bold text-[#1C1917]">Estilos da Libi</h3>
         </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {DUO_OUTFITS.map((outfit) => {
             const isUnlocked = userProfile.unlockedOutfits.includes(outfit.id);
             const isEquipped = userProfile.duoOutfit === outfit.id;
@@ -203,40 +215,44 @@ export const ShopView: React.FC<ShopViewProps> = ({
             return (
               <div
                 key={outfit.id}
-                className={`
-                  p-5 rounded-3xl border-2 border-b-6 transition-all duration-150 flex flex-col justify-between space-y-4 shadow-sm
-                  ${isEquipped ? 'bg-[#FFF7ED] border-[#F97316] border-b-[#C2410C]' : 'bg-white border-[#F1EAE2] border-b-[#FED7AA]'}
-                `}
+                className={`p-4 rounded-2xl border flex flex-col justify-between space-y-3 ${
+                  isEquipped
+                    ? 'bg-[#F0FDFA] border-[#0D9488]'
+                    : 'bg-white border-[#E8E2D9]'
+                }`}
               >
-                <div className="flex items-start gap-3.5">
-                  <div className="w-14 h-14 rounded-2xl bg-[#FFFDF9] border border-[#F1EAE2] flex items-center justify-center text-3xl shrink-0">
-                    {outfit.icon}
-                  </div>
-                  <div className="space-y-0.5">
-                    <h4 className="font-black text-base text-[#292524]">{outfit.name}</h4>
-                    <p className="text-xs text-[#78716C] font-semibold">{outfit.description}</p>
-                  </div>
+                <div className="space-y-1">
+                  <h4 className="font-bold text-sm text-[#1C1917]">{outfit.name}</h4>
+                  <p className="text-xs text-[#57534E]">{outfit.description}</p>
                 </div>
 
                 <button
                   onClick={() => handleOutfitAction(outfit)}
                   className={`
-                    w-full py-2.5 px-4 rounded-2xl font-black text-xs uppercase tracking-wider border-b-4 transition-all cursor-pointer active:translate-y-0.5
+                    tactile-btn w-full py-2 px-3 rounded-xl font-bold text-xs uppercase tracking-wider border-b-[3px] cursor-pointer flex items-center justify-center gap-1
                     ${isEquipped
-                      ? 'bg-[#FF6B00] text-white border-[#9A3412]'
+                      ? 'bg-[#0D9488] text-white border-[#0F766E]'
                       : isUnlocked
-                      ? 'bg-[#EA580C] hover:bg-[#C2410C] text-white border-[#7C2D12]'
-                      : 'bg-[#F59E0B] hover:bg-[#D97706] text-amber-950 border-[#92400E]'}
+                      ? 'bg-[#EA580C] hover:bg-[#DC4F06] text-white border-[#9A3412]'
+                      : 'bg-[#F3F0EA] hover:bg-[#E8E2D9] text-[#1C1917] border-[#D6CFC5]'}
                   `}
                 >
-                  {isEquipped ? 'Equipado ✓' : isUnlocked ? 'Equipar' : `Comprar por ${outfit.price} 💎`}
+                  {isEquipped ? (
+                    <span>Equipado</span>
+                  ) : isUnlocked ? (
+                    <span>Equipar</span>
+                  ) : (
+                    <>
+                      <span>{outfit.price}</span>
+                      <Gem className="w-3.5 h-3.5 fill-[#F59E0B] text-[#B45309]" />
+                    </>
+                  )}
                 </button>
               </div>
             );
           })}
         </div>
       </div>
-
     </div>
   );
 };

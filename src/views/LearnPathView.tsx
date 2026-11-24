@@ -1,23 +1,30 @@
-import React, { useState } from 'react';
-import { 
-  BookOpen, 
-  Star, 
-  Check, 
-  Lock, 
-  Gift, 
-  Trophy, 
-  Zap, 
-  Play, 
-  BookMarked, 
+import React, { useState, useRef, useMemo, useEffect } from 'react';
+import {
+  BookOpen,
+  Star,
+  Check,
+  Lock,
+  Gift,
+  Trophy,
+  Zap,
+  Gem,
+  Play,
+  BookMarked,
   X,
-  Sparkles,
   Info,
   ChevronLeft,
   ChevronRight,
-  Layers
+  HeartHandshake
 } from 'lucide-react';
-import { Section, Unit, PathNode, UserProfile } from '../types';
-import { LIBRAS_SECTIONS, ALL_50_UNITS } from '../data/librasData';
+import { Unit, PathNode, UserProfile } from '../types';
+import {
+  LIBRAS_SECTIONS_META,
+  TRACK_STRUCTURE,
+  getSectionByNumber,
+  getTrackUnlockState
+} from '../data/librasData';
+import { findCatalogSign } from '../data/librasCatalog255';
+import { SignSchematicVisualizer } from '../components/SignSchematicVisualizer';
 import { LibiMascot } from '../components/LibiMascot';
 import { soundService } from '../services/soundService';
 
@@ -26,16 +33,65 @@ interface LearnPathViewProps {
   onStartNode: (node: PathNode, unit: Unit) => void;
 }
 
-export const LearnPathView: React.FC<LearnPathViewProps> = ({
+export const LearnPathView = ({
   userProfile,
   onStartNode
-}) => {
-  const [activeSectionNumber, setActiveSectionNumber] = useState<number>(1);
+}: LearnPathViewProps) => {
+  const unlockState = useMemo(
+    () => getTrackUnlockState(userProfile.completedNodeIds),
+    [userProfile.completedNodeIds]
+  );
+
+  const [activeSectionNumber, setActiveSectionNumber] = useState<number>(
+    unlockState.currentSectionNumber
+  );
+  const [activeStageNumber, setActiveStageNumber] = useState<number>(
+    unlockState.currentStageNumber
+  );
   const [selectedNode, setSelectedNode] = useState<{ node: PathNode; unit: Unit } | null>(null);
   const [guidebookUnit, setGuidebookUnit] = useState<Unit | null>(null);
+  const sectionTabsRef = useRef<HTMLDivElement>(null);
 
-  const sections: Section[] = LIBRAS_SECTIONS;
-  const currentSection = sections.find(s => s.sectionNumber === activeSectionNumber) || sections[0];
+  useEffect(() => {
+    if (!unlockState.isSectionUnlocked(activeSectionNumber)) {
+      setActiveSectionNumber(unlockState.currentSectionNumber);
+    }
+  }, [activeSectionNumber, unlockState]);
+
+  useEffect(() => {
+    if (!unlockState.isStageUnlocked(activeSectionNumber, activeStageNumber)) {
+      setActiveStageNumber(
+        activeSectionNumber === unlockState.currentSectionNumber
+          ? unlockState.currentStageNumber
+          : 1
+      );
+    }
+  }, [activeSectionNumber, activeStageNumber, unlockState]);
+
+  const currentSection = useMemo(
+    () => getSectionByNumber(activeSectionNumber),
+    [activeSectionNumber]
+  );
+  const sectionUnits = currentSection.units;
+  const activeUnit =
+    sectionUnits.find((u) => u.unitNumber === activeStageNumber) || sectionUnits[0];
+
+  const handleSelectSection = (sectionNumber: number) => {
+    soundService.playTap();
+    if (!unlockState.isSectionUnlocked(sectionNumber)) return;
+    setActiveSectionNumber(sectionNumber);
+    setActiveStageNumber(
+      sectionNumber === unlockState.currentSectionNumber
+        ? unlockState.currentStageNumber
+        : 1
+    );
+  };
+
+  const handleSelectStage = (stageNumber: number) => {
+    soundService.playTap();
+    if (!unlockState.isStageUnlocked(activeSectionNumber, stageNumber)) return;
+    setActiveStageNumber(stageNumber);
+  };
 
   const handleNodeClick = (node: PathNode, unit: Unit, isUnlocked: boolean) => {
     soundService.playTap();
@@ -48,382 +104,437 @@ export const LearnPathView: React.FC<LearnPathViewProps> = ({
     setGuidebookUnit(unit);
   };
 
-  // Zigzag offsets for the path stepping stones
+  const scrollSectionStrip = (direction: 'left' | 'right') => {
+    if (!sectionTabsRef.current) return;
+    soundService.playTap();
+    sectionTabsRef.current.scrollBy({
+      left: direction === 'left' ? -220 : 220,
+      behavior: 'smooth'
+    });
+  };
+
   const getOffsetClass = (index: number) => {
     const offsets = [
       'translate-x-0',
-      'translate-x-8 sm:translate-x-14',
-      'translate-x-14 sm:translate-x-24',
-      'translate-x-8 sm:translate-x-14',
+      'translate-x-4 sm:translate-x-8',
+      'translate-x-7 sm:translate-x-12',
+      'translate-x-4 sm:translate-x-8',
       'translate-x-0',
-      '-translate-x-8 sm:-translate-x-14',
-      '-translate-x-14 sm:-translate-x-24',
-      '-translate-x-8 sm:-translate-x-14'
+      '-translate-x-4 sm:-translate-x-8',
+      '-translate-x-7 sm:-translate-x-12',
+      '-translate-x-4 sm:-translate-x-8'
     ];
     return offsets[index % offsets.length];
   };
 
-  const unitColorThemes: Record<string, { bg: string; border: string; light: string; text: string }> = {
-    green: { bg: 'bg-[#FF6B00]', border: 'border-[#C2410C]', light: 'bg-[#FFEDD5]', text: 'text-[#EA580C]' },
-    blue: { bg: 'bg-[#F97316]', border: 'border-[#C2410C]', light: 'bg-[#FFEDD5]', text: 'text-[#EA580C]' },
-    purple: { bg: 'bg-[#E11D48]', border: 'border-[#9F1239]', light: 'bg-[#FFE4E6]', text: 'text-[#E11D48]' },
-    orange: { bg: 'bg-[#FF7A00]', border: 'border-[#C2410C]', light: 'bg-[#FFE8D6]', text: 'text-[#EA580C]' },
-    red: { bg: 'bg-[#DC2626]', border: 'border-[#991B1B]', light: 'bg-[#FEE2E2]', text: 'text-[#DC2626]' },
-    yellow: { bg: 'bg-[#F59E0B]', border: 'border-[#B45309]', light: 'bg-[#FEF3C7]', text: 'text-[#B45309]' },
-    teal: { bg: 'bg-[#EA580C]', border: 'border-[#9A3412]', light: 'bg-[#FFEDD5]', text: 'text-[#EA580C]' }
+  const renderNodeTypeIcon = (node: PathNode) => {
+    switch (node.type) {
+      case 'story':
+        return <BookMarked className="w-7 h-7" />;
+      case 'chest':
+        return <Gift className="w-7 h-7" />;
+      case 'trophy':
+        return <Trophy className="w-7 h-7" />;
+      default:
+        return <Star className="w-8 h-8 fill-current" />;
+    }
   };
 
   return (
-    <div className="max-w-2xl mx-auto px-4 py-4 space-y-8 select-none">
-      
-      {/* 50 Units Quick Navigator Header */}
-      <div className="bg-white rounded-3xl p-4 border-2 border-[#F1EAE2] shadow-sm space-y-3">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Layers className="w-5 h-5 text-[#EA580C]" />
-            <h3 className="font-black text-sm text-[#292524]">
-              Trilha Completa de Libras • 50 Unidades
-            </h3>
-          </div>
-          <span className="text-xs font-black text-[#EA580C] bg-[#FFEDD5] px-2.5 py-1 rounded-xl">
-            Seção {activeSectionNumber} de 10
-          </span>
-        </div>
+    <div className="max-w-xl mx-auto px-2 sm:px-4 space-y-5 select-none">
+      {/* 1. Top Bar: 10 Sections Scrollable with Strict Sequential Unlocking */}
+      <div className="space-y-2.5">
+        <div className="flex items-center gap-1.5 min-w-0">
+          <button
+            type="button"
+            onClick={() => scrollSectionStrip('left')}
+            aria-label="Rolar seções para a esquerda"
+            className="p-1.5 rounded-xl bg-white border border-[#E8E2D9] text-[#57534E] hover:text-[#1C1917] hover:bg-[#F3F0EA] cursor-pointer shrink-0 transition-colors"
+          >
+            <ChevronLeft className="w-4 h-4" />
+          </button>
 
-        {/* Section Tabs Pills */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-          {sections.map((sec) => (
-            <button
-              key={sec.sectionNumber}
-              onClick={() => {
-                soundService.playTap();
-                setActiveSectionNumber(sec.sectionNumber);
-              }}
-              className={`px-3.5 py-2 rounded-2xl text-xs font-black shrink-0 transition-all cursor-pointer ${
-                activeSectionNumber === sec.sectionNumber
-                  ? 'bg-[#FF6B00] text-white shadow-md scale-105 border-b-3 border-[#C2410C]'
-                  : 'bg-[#FFF7ED] text-[#78716C] hover:text-[#292524] hover:bg-[#FED7AA]/50'
-              }`}
-            >
-              Seção {sec.sectionNumber}
-            </button>
-          ))}
-        </div>
-      </div>
+          <div
+            ref={sectionTabsRef}
+            className="flex items-center gap-1.5 overflow-x-auto no-scrollbar flex-1 min-w-0 py-0.5"
+          >
+            {LIBRAS_SECTIONS_META.map((sec) => {
+              const isSelected = activeSectionNumber === sec.sectionNumber;
+              const isUnlocked = unlockState.isSectionUnlocked(sec.sectionNumber);
+              const isDone = unlockState.isSectionCompleted(sec.sectionNumber);
 
-      {/* Active Section Header (Sunset Gradient Card) */}
-      <div className="bg-gradient-to-r from-[#FF6B00] via-[#F97316] to-[#EA580C] text-white p-5 rounded-3xl border-b-6 border-[#9A3412] shadow-lg flex items-center justify-between gap-4">
-        <div className="space-y-1">
-          <span className="text-xs font-black uppercase tracking-widest text-[#FEF3C7] flex items-center gap-1.5">
-            <span>🤟</span>
-            <span>{currentSection.title}</span>
-          </span>
-          <h2 className="text-xl sm:text-2xl font-black">{currentSection.description}</h2>
-        </div>
-        <div className="w-14 h-14 rounded-2xl bg-white/20 flex items-center justify-center text-3xl shrink-0 shadow-inner">
-          🇧🇷
-        </div>
-      </div>
-
-      {/* Units in Current Section */}
-      <div className="space-y-12">
-        {currentSection.units.map((unit) => {
-          const theme = unitColorThemes[unit.themeColor] || unitColorThemes.orange;
-
-          return (
-            <div key={unit.id} className="space-y-6">
-              
-              {/* Unit Banner Header with Guidebook icon */}
-              <div className={`${theme.bg} text-white p-4 sm:p-5 rounded-3xl border-b-6 ${theme.border} shadow-md flex items-center justify-between gap-4`}>
-                <div className="space-y-1">
-                  <span className="text-xs font-black uppercase tracking-widest text-[#FEF3C7]">
-                    {unit.title} • 12 Atividades
-                  </span>
-                  <p className="text-xs text-white/95 font-medium line-clamp-1">{unit.description}</p>
-                </div>
-
-                {/* Guidebook Button */}
+              return (
                 <button
-                  onClick={() => handleOpenGuidebook(unit)}
-                  className="p-3 rounded-2xl bg-white/20 hover:bg-white/30 text-white font-black text-xs flex items-center gap-1.5 cursor-pointer shrink-0 transition-transform active:scale-95 shadow-inner"
-                  title="Abrir Guia de Sinais da Unidade"
+                  key={sec.sectionNumber}
+                  type="button"
+                  disabled={!isUnlocked}
+                  onClick={() => handleSelectSection(sec.sectionNumber)}
+                  className={`
+                    inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold shrink-0 transition-colors whitespace-nowrap
+                    ${isSelected
+                      ? 'bg-[#0D9488] text-white border-b-2 border-[#0F766E] cursor-pointer'
+                      : isUnlocked
+                      ? 'bg-[#F3F0EA] text-[#1C1917] hover:bg-[#E8E2D9] cursor-pointer'
+                      : 'bg-[#F3F0EA]/60 text-[#78716C] cursor-not-allowed opacity-70'}
+                  `}
                 >
-                  <BookOpen className="w-5 h-5" />
-                  <span className="hidden sm:inline font-bold">Guia de Sinais</span>
+                  {!isUnlocked ? (
+                    <Lock className="w-3 h-3 shrink-0" />
+                  ) : isDone ? (
+                    <Check className="w-3 h-3 shrink-0" />
+                  ) : null}
+                  <span>Seção {sec.sectionNumber}</span>
                 </button>
-              </div>
+              );
+            })}
+          </div>
 
-              {/* Path Nodes Stepping Stones (Zigzag) */}
-              <div className="py-6 flex flex-col items-center space-y-6 sm:space-y-8 relative">
-                
-                {unit.nodes.map((node, nIdx) => {
-                  const isCompleted = userProfile.completedNodeIds.includes(node.id);
-                  const prevNode = nIdx > 0 ? unit.nodes[nIdx - 1] : null;
-                  const isUnlocked = nIdx === 0 || (prevNode && userProfile.completedNodeIds.includes(prevNode.id)) || isCompleted;
-                  const isActive = isUnlocked && !isCompleted;
-                  const offsetClass = getOffsetClass(nIdx);
+          <button
+            type="button"
+            onClick={() => scrollSectionStrip('right')}
+            aria-label="Rolar seções para a direita"
+            className="p-1.5 rounded-xl bg-white border border-[#E8E2D9] text-[#57534E] hover:text-[#1C1917] hover:bg-[#F3F0EA] cursor-pointer shrink-0 transition-colors"
+          >
+            <ChevronRight className="w-4 h-4" />
+          </button>
+        </div>
 
-                  return (
-                    <div 
-                      key={node.id} 
-                      className={`relative flex flex-col items-center ${offsetClass} transition-transform duration-300`}
-                    >
-                      
-                      {/* Libi Mascot standing near Active node */}
-                      {isActive && (
-                        <div className="absolute -top-20 -left-20 sm:-left-28 z-20 pointer-events-none animate-bounce">
-                          <LibiMascot 
-                            mood="happy" 
-                            outfit={userProfile.duoOutfit} 
-                            size="sm" 
-                            showSpeechBubble={true} 
-                            speechText="Sinalizar! 🤟" 
-                          />
-                        </div>
-                      )}
-
-                      {/* Node Stepping Button */}
-                      <div className="relative group">
-                        
-                        {/* Pulsing Aura if active */}
-                        {isActive && (
-                          <div className="absolute -inset-2 rounded-full bg-[#FF6B00]/30 animate-ping pointer-events-none" />
-                        )}
-
-                        <button
-                          onClick={() => handleNodeClick(node, unit, isUnlocked)}
-                          className={`
-                            w-18 h-18 sm:w-20 sm:h-20 rounded-full flex items-center justify-center transition-all duration-200 cursor-pointer select-none active:translate-y-2
-                            ${isCompleted
-                              ? 'bg-gradient-to-b from-[#F59E0B] to-[#D97706] border-b-8 border-[#92400E] text-white shadow-lg'
-                              : isActive
-                              ? `${theme.bg} border-b-8 ${theme.border} text-white shadow-xl scale-105`
-                              : 'bg-[#E7E5E4] border-b-8 border-[#A8A29E] text-[#A8A29E] cursor-not-allowed'}
-                          `}
-                        >
-                          {isCompleted ? (
-                            <Check className="w-9 h-9 stroke-[3.5]" />
-                          ) : !isUnlocked ? (
-                            <Lock className="w-7 h-7" />
-                          ) : node.type === 'story' ? (
-                            <BookMarked className="w-8 h-8" />
-                          ) : node.type === 'chest' ? (
-                            <Gift className="w-8 h-8" />
-                          ) : node.type === 'trophy' ? (
-                            <Trophy className="w-8 h-8" />
-                          ) : (
-                            <Star className="w-9 h-9 fill-current" />
-                          )}
-                        </button>
-
-                        {/* Level Crown / Reward Star Badge */}
-                        {isCompleted && (
-                          <div className="absolute -bottom-1 -right-1 w-7 h-7 rounded-full bg-[#EA580C] border-2 border-white flex items-center justify-center text-xs shadow-md">
-                            🤟
-                          </div>
-                        )}
-
-                      </div>
-
-                      {/* Node Title pill */}
-                      <span className="mt-2 text-xs font-black text-[#292524] text-center max-w-[160px] truncate">
-                        {node.title}
-                      </span>
-
-                    </div>
-                  );
-                })}
-
-              </div>
-
-            </div>
-          );
-        })}
+        {/* Section Heading */}
+        <div className="px-1 min-w-0">
+          <span className="text-[11px] font-bold uppercase tracking-wider text-[#0F766E] block truncate tabular-nums">
+            Seção {currentSection.sectionNumber} de {TRACK_STRUCTURE.sections} · {currentSection.title}
+          </span>
+          <p className="text-xs text-[#57534E] font-medium line-clamp-1 mt-0.5">
+            {currentSection.description}
+          </p>
+        </div>
       </div>
 
-      {/* Pagination Footer between sections */}
-      <div className="flex items-center justify-between pt-4 pb-12">
+      {/* 2. 20 Etapas Grid Selector inside Active Section */}
+      <div className="bg-white rounded-2xl border border-[#E8E2D9] p-3.5 space-y-2.5">
+        <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-[#57534E]">
+          <span>Etapas da Seção {activeSectionNumber}</span>
+          <span className="tabular-nums">
+            Etapa {activeStageNumber} de {TRACK_STRUCTURE.stagesPerSection}
+          </span>
+        </div>
+
+        <div className="grid grid-cols-5 sm:grid-cols-10 gap-1.5 tabular-nums">
+          {sectionUnits.map((u) => {
+            const stageNum = u.unitNumber;
+            const isUnlocked = unlockState.isStageUnlocked(activeSectionNumber, stageNum);
+            const isCompleted = unlockState.isStageCompleted(activeSectionNumber, stageNum);
+            const isSelected = activeStageNumber === stageNum;
+
+            return (
+              <button
+                key={u.id}
+                type="button"
+                disabled={!isUnlocked}
+                onClick={() => handleSelectStage(stageNum)}
+                title={`Etapa ${stageNum}`}
+                className={`
+                  h-9 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition-colors
+                  ${isSelected
+                    ? 'bg-[#EA580C] text-white border-b-2 border-[#9A3412] cursor-pointer'
+                    : isCompleted
+                    ? 'bg-[#F0FDFA] text-[#0F766E] border border-[#99F6E4] hover:bg-[#CCFBF1] cursor-pointer'
+                    : isUnlocked
+                    ? 'bg-[#FAF9F6] text-[#1C1917] border border-[#E8E2D9] hover:bg-[#F3F0EA] cursor-pointer'
+                    : 'bg-[#F3F0EA]/70 text-[#78716C] cursor-not-allowed opacity-70'}
+                `}
+              >
+                {!isUnlocked ? (
+                  <Lock className="w-3 h-3" />
+                ) : isCompleted && !isSelected ? (
+                  <Check className="w-3.5 h-3.5 stroke-[2.8]" />
+                ) : (
+                  <span>{stageNum}</span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* 3. Active Etapa Banner + 12 Sequential Activities */}
+      {activeUnit && (
+        <section className="space-y-5">
+          <div className="p-4 sm:p-5 rounded-2xl bg-[#EA580C] text-white border-b-4 border-[#9A3412] flex items-center justify-between gap-4 min-w-0">
+            <div className="space-y-0.5 min-w-0 flex-1">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#FFEDD5] block tabular-nums">
+                Seção {activeSectionNumber} · Etapa {activeUnit.unitNumber} · {TRACK_STRUCTURE.activitiesPerStage} atividades
+              </span>
+              <h2 className="font-display text-lg sm:text-xl font-bold leading-snug truncate">
+                {activeUnit.title}
+              </h2>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => handleOpenGuidebook(activeUnit)}
+              className="tactile-btn px-3.5 py-2.5 rounded-xl font-bold text-xs flex items-center gap-2 cursor-pointer shrink-0 bg-[#C2410C] hover:bg-[#9A3412] text-white border border-white/25 border-b-[3px] border-b-[#7C2D12]"
+            >
+              <BookOpen className="w-4 h-4 shrink-0" />
+              <span className="hidden sm:inline whitespace-nowrap">Guia de sinais</span>
+            </button>
+          </div>
+
+          {/* 12 Path Nodes */}
+          <div className="py-3 flex flex-col items-center gap-6">
+            {activeUnit.nodes.map((node, nIdx) => {
+              const activityNumber = nIdx + 1;
+              const isCompleted = unlockState.isActivityCompleted(
+                activeSectionNumber,
+                activeUnit.unitNumber,
+                activityNumber
+              );
+              const isUnlocked = unlockState.isActivityUnlocked(
+                activeSectionNumber,
+                activeUnit.unitNumber,
+                activityNumber
+              );
+              const isActive = isUnlocked && !isCompleted;
+              const offsetClass = isActive ? 'translate-x-0' : getOffsetClass(nIdx);
+
+              return (
+                <div
+                  key={node.id}
+                  className={`w-full flex items-center justify-center gap-4 ${offsetClass}`}
+                >
+                  {isActive && (
+                    <div className="hidden sm:flex shrink-0">
+                      <LibiMascot
+                        mood="ensinando"
+                        size="sm"
+                        showSpeechBubble={true}
+                        speechText="Começar"
+                      />
+                    </div>
+                  )}
+
+                  <div className="flex flex-col items-center">
+                    <button
+                      type="button"
+                      onClick={() => handleNodeClick(node, activeUnit, isUnlocked)}
+                      disabled={!isUnlocked}
+                      aria-label={`${node.title}${isCompleted ? ' (concluída)' : !isUnlocked ? ' (bloqueada)' : ''}`}
+                      className={`
+                        w-[72px] h-[72px] sm:w-[76px] sm:h-[76px] rounded-full flex items-center justify-center transition-all duration-150 select-none
+                        ${isCompleted
+                          ? 'bg-[#0D9488] hover:bg-[#0F766E] border-b-[6px] border-[#0F766E] text-white cursor-pointer active:translate-y-[4px] active:border-b-2'
+                          : isActive
+                          ? 'bg-[#EA580C] hover:bg-[#DC4F06] border-b-[6px] border-[#9A3412] text-white cursor-pointer active:translate-y-[4px] active:border-b-2 ring-4 ring-[#EA580C]/20'
+                          : 'bg-[#E8E2D9] border-b-[6px] border-[#C7BFB3] text-[#78716C] cursor-not-allowed'}
+                      `}
+                    >
+                      {isCompleted ? (
+                        <Check className="w-8 h-8 stroke-[3.2]" />
+                      ) : !isUnlocked ? (
+                        <Lock className="w-6 h-6" />
+                      ) : (
+                        renderNodeTypeIcon(node)
+                      )}
+                    </button>
+
+                    <span
+                      className={`mt-2 text-xs font-bold text-center max-w-[200px] leading-snug ${
+                        isUnlocked ? 'text-[#1C1917]' : 'text-[#78716C]'
+                      }`}
+                    >
+                      {node.title}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </section>
+      )}
+
+      {/* Footer Navigation between Unlocked Sections */}
+      <div className="flex items-center justify-between pt-3 pb-10 border-t border-[#E8E2D9]">
         <button
+          type="button"
           disabled={activeSectionNumber <= 1}
-          onClick={() => {
-            soundService.playTap();
-            setActiveSectionNumber(prev => Math.max(1, prev - 1));
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          }}
-          className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-white border-2 border-[#F1EAE2] font-black text-xs text-[#292524] hover:bg-[#FFF7ED] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-xs transition-all active:scale-95"
+          onClick={() => handleSelectSection(Math.max(1, activeSectionNumber - 1))}
+          className="tactile-btn flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-white border border-[#E8E2D9] border-b-[3px] border-b-[#D6CFC5] font-bold text-xs text-[#1C1917] hover:bg-[#F3F0EA] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
         >
           <ChevronLeft className="w-4 h-4" />
-          <span>Seção Anterior</span>
+          <span>Seção anterior</span>
         </button>
 
-        <span className="text-xs font-bold text-[#78716C]">
-          Unidades {(activeSectionNumber - 1) * 5 + 1} a {activeSectionNumber * 5}
+        <span className="text-xs font-semibold text-[#57534E] tabular-nums">
+          Seção {activeSectionNumber} de {TRACK_STRUCTURE.sections}
         </span>
 
         <button
-          disabled={activeSectionNumber >= 10}
-          onClick={() => {
-            soundService.playTap();
-            setActiveSectionNumber(prev => Math.min(10, prev + 1));
-            window.scrollTo({ top: 0, behavior: 'smooth' });
-          }}
-          className="flex items-center gap-2 px-5 py-3 rounded-2xl bg-[#FF6B00] text-white font-black text-xs hover:bg-[#EA580C] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-md transition-all active:scale-95"
+          type="button"
+          disabled={
+            activeSectionNumber >= TRACK_STRUCTURE.sections ||
+            !unlockState.isSectionUnlocked(activeSectionNumber + 1)
+          }
+          onClick={() =>
+            handleSelectSection(Math.min(TRACK_STRUCTURE.sections, activeSectionNumber + 1))
+          }
+          className="tactile-btn flex items-center gap-1.5 px-4 py-2.5 rounded-xl bg-[#0D9488] hover:bg-[#0F766E] text-white font-bold text-xs border-b-[3px] border-[#115E59] disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer"
         >
-          <span>Próxima Seção</span>
+          <span>Próxima seção</span>
           <ChevronRight className="w-4 h-4" />
         </button>
       </div>
 
-      {/* Interactive Node Start Modal Popover */}
+      {/* Interactive Node Start Modal */}
       {selectedNode && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white rounded-3xl border-2 border-[#F1EAE2] border-b-8 border-[#FED7AA] p-6 max-w-sm w-full space-y-5 shadow-2xl animate-scale-in text-center relative">
-            
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-[2px] flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-[#FAF9F6] rounded-3xl border border-[#E8E2D9] p-6 max-w-sm w-full space-y-5 shadow-xl animate-scale-in text-center relative">
             <button
+              type="button"
               onClick={() => setSelectedNode(null)}
-              className="absolute top-4 right-4 p-1.5 rounded-full text-[#A8A29E] hover:text-[#292524] hover:bg-[#FFF7ED] cursor-pointer"
+              aria-label="Fechar"
+              className="absolute top-4 right-4 p-1.5 rounded-full text-[#78716C] hover:text-[#1C1917] hover:bg-[#E8E2D9]/60 cursor-pointer"
             >
               <X className="w-5 h-5" />
             </button>
 
-            {/* Mascot Icon & Title */}
-            <div className="space-y-2 pt-2">
-              <div className="w-16 h-16 mx-auto rounded-3xl bg-[#FFEDD5] text-[#EA580C] flex items-center justify-center text-3xl shadow-inner border-2 border-[#FDBA74]">
-                {selectedNode.node.type === 'story' ? '📖' : selectedNode.node.type === 'chest' ? '🎁' : selectedNode.node.type === 'trophy' ? '🏆' : '🤟'}
-              </div>
-              <h3 className="text-xl font-black text-[#292524]">{selectedNode.node.title}</h3>
-              <p className="text-xs text-[#78716C] font-semibold">{selectedNode.node.description}</p>
-              <div className="text-[11px] font-bold text-[#EA580C]">
-                {selectedNode.node.exercises.length} Exercícios Práticos
-              </div>
+            <div className="flex flex-col items-center space-y-2 pt-1">
+              <LibiMascot mood="ensinando" size="md" />
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#0F766E]">
+                {selectedNode.unit.title}
+              </span>
+              <h3 className="font-display text-xl font-bold text-[#1C1917]">
+                {selectedNode.node.title}
+              </h3>
+              <p className="text-xs text-[#57534E] font-medium leading-relaxed">
+                {selectedNode.node.description}
+              </p>
             </div>
 
-            {/* Rewards info */}
-            <div className="flex items-center justify-center gap-4 py-2 px-4 rounded-2xl bg-[#FFFDF9] border border-[#F1EAE2] text-xs font-black">
+            <div className="flex items-center justify-center gap-5 py-2.5 px-4 rounded-2xl bg-white border border-[#E8E2D9] text-xs font-bold tabular-nums">
               <span className="text-[#EA580C] flex items-center gap-1">
                 <Zap className="w-4 h-4 fill-current" />
                 <span>+{selectedNode.node.xpReward} XP</span>
               </span>
-              <span className="text-[#D97706] flex items-center gap-1">
-                <span>💎</span>
-                <span>+{selectedNode.node.gemsReward} Gemas</span>
+              <span className="text-[#B45309] flex items-center gap-1">
+                <Gem className="w-4 h-4 fill-[#F59E0B] text-[#B45309]" />
+                <span>+{selectedNode.node.gemsReward} gemas</span>
+              </span>
+              <span className="text-[#57534E]">
+                {selectedNode.node.exercises.length} exercícios
               </span>
             </div>
 
-            {/* Start Button */}
             <button
+              type="button"
               onClick={() => {
                 const nodeToStart = selectedNode.node;
                 const unitToStart = selectedNode.unit;
                 setSelectedNode(null);
                 onStartNode(nodeToStart, unitToStart);
               }}
-              className="w-full py-3.5 px-6 rounded-2xl bg-gradient-to-r from-[#FF6B00] to-[#EA580C] hover:opacity-95 text-white font-black text-sm uppercase tracking-wider border-b-6 border-[#9A3412] cursor-pointer shadow-lg transition-all active:translate-y-1 flex items-center justify-center gap-2"
+              className="tactile-btn w-full py-3.5 px-6 rounded-2xl bg-[#EA580C] hover:bg-[#DC4F06] text-white font-bold text-sm uppercase tracking-wider border-b-4 border-[#9A3412] cursor-pointer flex items-center justify-center gap-2"
             >
               <Play className="w-4 h-4 fill-white" />
-              <span>Começar no EasyLib</span>
+              <span>Iniciar atividade</span>
             </button>
-
           </div>
         </div>
       )}
 
-      {/* Guidebook Modal (5 Parameters & Cultural Notes) */}
+      {/* Clean Guidebook Modal (Signs + Meanings only) */}
       {guidebookUnit && (
-        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white rounded-3xl border-2 border-[#F1EAE2] p-6 max-w-lg w-full space-y-5 shadow-2xl animate-scale-in max-h-[85vh] overflow-y-auto">
-            
-            <div className="flex items-center justify-between border-b border-[#F1EAE2] pb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-[#FF6B00] text-white flex items-center justify-center text-2xl shadow-xs">
-                  🤟
-                </div>
-                <div>
-                  <h3 className="text-lg font-black text-[#292524]">{guidebookUnit.title}</h3>
-                  <p className="text-xs text-[#78716C] font-semibold">{guidebookUnit.description}</p>
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-[2px] flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-[#FAF9F6] rounded-3xl border border-[#E8E2D9] p-6 max-w-lg w-full space-y-5 shadow-xl animate-scale-in max-h-[85vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-[#E8E2D9] pb-4 gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <LibiMascot mood="ensinando" size="xs" />
+                <div className="min-w-0">
+                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#0F766E]">
+                    Guia de sinais · Etapa {guidebookUnit.unitNumber}
+                  </span>
+                  <h3 className="font-display text-lg font-bold text-[#1C1917] truncate">
+                    {guidebookUnit.title}
+                  </h3>
                 </div>
               </div>
               <button
+                type="button"
                 onClick={() => setGuidebookUnit(null)}
-                className="p-1.5 rounded-full text-[#A8A29E] hover:text-[#292524] hover:bg-[#FFF7ED] cursor-pointer"
+                aria-label="Fechar guia"
+                className="p-1.5 rounded-full text-[#78716C] hover:text-[#1C1917] hover:bg-[#E8E2D9]/60 cursor-pointer shrink-0"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Signs with 5 Parameters Breakdown */}
             <div className="space-y-3">
-              <h4 className="text-xs font-black uppercase tracking-wider text-[#A8A29E] flex items-center gap-1.5">
-                <Sparkles className="w-4 h-4 text-[#EA580C]" />
-                <span>Sinais em Destaque & Parâmetros</span>
+              <h4 className="text-xs font-bold uppercase tracking-wider text-[#57534E]">
+                Sinais desta etapa
               </h4>
 
-              <div className="space-y-2.5">
-                {guidebookUnit.guidebook.signsOverview.map((item, idx) => (
-                  <div 
-                    key={idx}
-                    className="p-3.5 rounded-2xl bg-[#FFFDF9] border border-[#F1EAE2] space-y-2"
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="font-black text-sm text-[#C2410C]">{item.sign}</span>
-                      <span className="text-xs text-[#78716C] font-bold bg-white px-2 py-0.5 rounded-md border border-[#F1EAE2]">{item.meaning}</span>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-1.5 text-[11px]">
-                      <div className="bg-white p-1.5 rounded-lg border border-[#F1EAE2]">
-                        <span className="font-extrabold text-[#44403C]">CM: </span>
-                        <span className="text-[#292524]">{item.cm}</span>
-                      </div>
-                      <div className="bg-white p-1.5 rounded-lg border border-[#F1EAE2]">
-                        <span className="font-extrabold text-[#44403C]">PA: </span>
-                        <span className="text-[#292524]">{item.pa}</span>
-                      </div>
-                      <div className="bg-white p-1.5 rounded-lg border border-[#F1EAE2]">
-                        <span className="font-extrabold text-[#44403C]">Movimento: </span>
-                        <span className="text-[#292524]">{item.mov}</span>
-                      </div>
-                      <div className="bg-white p-1.5 rounded-lg border border-[#F1EAE2]">
-                        <span className="font-extrabold text-[#44403C]">NMF: </span>
-                        <span className="text-[#292524]">{item.nmf}</span>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {guidebookUnit.guidebook.signsOverview.map((item, idx) => {
+                  const signObj = findCatalogSign(item.slug || item.sign);
+                  return (
+                    <div
+                      key={idx}
+                      className="p-3 bg-white rounded-2xl border border-[#E8E2D9] space-y-2"
+                    >
+                      <SignSchematicVisualizer
+                        sign={signObj}
+                        compact={true}
+                        hideControls={true}
+                      />
+                      <div>
+                        <div className="font-display font-bold text-base text-[#1C1917]">
+                          {item.sign}
+                        </div>
+                        <div className="text-xs text-[#57534E] font-medium">
+                          {item.meaning}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </div>
 
-            {/* Grammar Rule */}
-            <div className="space-y-2 p-4 rounded-2xl bg-amber-50 text-[#292524] border-2 border-amber-300">
-              <h4 className="text-xs font-black uppercase tracking-wider text-amber-800 flex items-center gap-1.5">
-                <Info className="w-4 h-4" />
+            <div className="space-y-1.5 p-4 rounded-2xl bg-[#F0FDFA] text-[#1C1917] border border-[#99F6E4]">
+              <h4 className="text-xs font-bold uppercase tracking-wider text-[#0F766E] flex items-center gap-1.5">
+                <Info className="w-4 h-4 shrink-0" />
                 <span>{guidebookUnit.guidebook.grammarRule.title}</span>
               </h4>
-              <p className="text-xs font-medium leading-relaxed">{guidebookUnit.guidebook.grammarRule.explanation}</p>
-              <div className="mt-2 pt-2 border-t border-amber-200/60 text-xs">
-                <div className="font-black text-amber-900">Exemplo Gloss: <span className="font-mono bg-white px-1.5 py-0.5 rounded">{guidebookUnit.guidebook.grammarRule.exampleGloss}</span></div>
-                <div className="text-[#78716C] mt-0.5">Tradução: {guidebookUnit.guidebook.grammarRule.examplePortuguese}</div>
+              <p className="text-xs text-[#115E59] leading-relaxed">
+                {guidebookUnit.guidebook.grammarRule.explanation}
+              </p>
+              <div className="pt-2 border-t border-[#99F6E4]/60 text-xs space-y-0.5">
+                <div className="font-bold text-[#0F766E]">
+                  {guidebookUnit.guidebook.grammarRule.exampleGloss}
+                </div>
+                <div className="text-[#115E59]">
+                  {guidebookUnit.guidebook.grammarRule.examplePortuguese}
+                </div>
               </div>
             </div>
 
-            {/* Cultural Tip */}
-            <div className="p-3.5 rounded-2xl bg-orange-50 text-orange-950 border-2 border-orange-200 text-xs space-y-1">
-              <div className="font-black uppercase tracking-wider text-orange-800 flex items-center gap-1.5">
-                <span>🧡 Cultura Surda</span>
+            <div className="p-4 rounded-2xl bg-[#FFF1E6] text-[#1C1917] border border-[#FED7AA] text-xs space-y-1">
+              <div className="font-bold uppercase tracking-wider text-[#9A3412] flex items-center gap-1.5">
+                <HeartHandshake className="w-4 h-4 shrink-0" />
+                <span>Cultura surda</span>
               </div>
-              <p className="font-medium leading-relaxed">{guidebookUnit.guidebook.culturalTip}</p>
+              <p className="text-[#431407] leading-relaxed">{guidebookUnit.guidebook.culturalTip}</p>
             </div>
 
             <button
+              type="button"
               onClick={() => setGuidebookUnit(null)}
-              className="w-full py-3 rounded-2xl bg-[#FF6B00] hover:bg-[#EA580C] text-white font-black text-xs uppercase tracking-wider border-b-4 border-[#9A3412] cursor-pointer shadow-md"
+              className="tactile-btn w-full py-3 rounded-2xl bg-[#0D9488] hover:bg-[#0F766E] text-white font-bold text-xs uppercase tracking-wider border-b-4 border-[#115E59] cursor-pointer"
             >
-              Entendido! Praticar Sinais
+              Voltar à trilha
             </button>
-
           </div>
         </div>
       )}
-
     </div>
   );
 };

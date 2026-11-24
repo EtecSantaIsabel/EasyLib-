@@ -1,18 +1,16 @@
 import React, { useState } from 'react';
-import { 
-  Flame, 
-  Gem, 
-  Heart, 
-  Volume2, 
-  VolumeX, 
-  Sparkles, 
-  ChevronDown, 
-  Check, 
+import {
+  Flame,
+  Gem,
+  Heart,
+  Volume2,
+  VolumeX,
   Infinity as InfinityIcon,
-  BookOpen
+  BookmarkCheck,
+  Bell
 } from 'lucide-react';
+import { User } from 'firebase/auth';
 import { LibrasTrack, UserProfile } from '../types';
-import { LIBRAS_TRACKS } from '../data/librasData';
 import { soundService } from '../services/soundService';
 
 interface TopHeaderProps {
@@ -22,21 +20,46 @@ interface TopHeaderProps {
   onToggleSuper: () => void;
   onOpenShop: () => void;
   onResetData: () => void;
+  firebaseUser?: User | null;
+  authBusy?: boolean;
+  onOpenAuthModal?: () => void;
+  onOpenProfile?: () => void;
 }
 
-export const TopHeader: React.FC<TopHeaderProps> = ({
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return 'V';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+}
+
+export const TopHeader = ({
   userProfile,
-  onSelectTrack,
   onRefillHearts,
   onToggleSuper,
-  onOpenShop
-}) => {
-  const [isTrackMenuOpen, setIsTrackMenuOpen] = useState(false);
+  onOpenShop,
+  firebaseUser,
+  authBusy = false,
+  onOpenAuthModal,
+  onOpenProfile
+}: TopHeaderProps) => {
   const [isStreakMenuOpen, setIsStreakMenuOpen] = useState(false);
   const [isHeartsMenuOpen, setIsHeartsMenuOpen] = useState(false);
   const [isMuted, setIsMuted] = useState(soundService.getMuted());
+  const [avatarImgError, setAvatarImgError] = useState(false);
 
-  const currentTrack = LIBRAS_TRACKS.find(t => t.id === userProfile.selectedTrack) || LIBRAS_TRACKS[0];
+  const hasLocalProgress = userProfile.xp > 0 || userProfile.completedNodeIds.length > 0;
+  const rawName = (
+    firebaseUser?.displayName ||
+    userProfile.name ||
+    firebaseUser?.phoneNumber ||
+    'Visitante'
+  ).trim();
+  const isDefaultGuestName =
+    !firebaseUser && (rawName === 'Aprendiz de Libras' || rawName === 'Visitante' || rawName === '');
+  const displayFirstName = isDefaultGuestName ? 'Visitante' : rawName.split(/\s+/)[0];
+  const avatarInitials = getInitials(isDefaultGuestName ? 'Visitante' : rawName);
+  const photoUrl = firebaseUser?.photoURL && !avatarImgError ? firebaseUser.photoURL : null;
 
   const toggleSound = () => {
     const muted = soundService.toggleMute();
@@ -55,224 +78,242 @@ export const TopHeader: React.FC<TopHeaderProps> = ({
   ];
 
   return (
-    <header className="sticky top-0 z-30 bg-[#FFFDF9]/95 backdrop-blur-md border-b-2 border-[#F1EAE2] px-4 sm:px-6 py-2.5">
-      <div className="max-w-6xl mx-auto flex items-center justify-between gap-3">
-        
-        {/* Left: Libras Track / Level Selector */}
-        <div className="relative">
+    <header className="sticky top-0 z-30 bg-[#FAF9F6]/95 backdrop-blur-md border-b border-[#E8E2D9] px-3 sm:px-6 py-2.5">
+      <div className="max-w-6xl mx-auto flex items-center justify-between gap-2 sm:gap-3 min-w-0">
+        {/* Left: User Account Chip (Avatar + Greeting, opens Profile/Login) */}
+        <button
+          type="button"
+          onClick={() => {
+            soundService.playTap();
+            setIsStreakMenuOpen(false);
+            setIsHeartsMenuOpen(false);
+            onOpenProfile?.();
+          }}
+          title="Abrir conta e perfil"
+          className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-2xl bg-white hover:bg-[#F3F0EA] border border-[#E8E2D9] border-b-[3px] border-b-[#D6CFC5] cursor-pointer transition-colors min-w-0 max-w-[175px] sm:max-w-[260px]"
+        >
+          {photoUrl ? (
+            <img
+              src={photoUrl}
+              alt={rawName}
+              onError={() => setAvatarImgError(true)}
+              className="w-8 h-8 rounded-full object-cover border border-[#99F6E4] shrink-0"
+            />
+          ) : (
+            <span className="w-8 h-8 rounded-full bg-[#0D9488] text-white flex items-center justify-center font-display font-bold text-xs shrink-0">
+              {avatarInitials}
+            </span>
+          )}
+          <div className="text-left min-w-0">
+            <div className="font-bold text-xs sm:text-sm text-[#1C1917] truncate">
+              Olá, {displayFirstName}
+            </div>
+            <div className="text-[10px] font-semibold text-[#57534E] truncate hidden sm:block">
+              {firebaseUser ? 'Conta conectada' : 'Toque para editar ou entrar'}
+            </div>
+          </div>
+        </button>
+
+        {/* Right: Sound, Notifications, Streak, Gems, Hearts & Auth */}
+        <div className="flex items-center gap-1 sm:gap-2 shrink-0">
+          {/* Notification Settings Shortcut */}
           <button
+            type="button"
             onClick={() => {
               soundService.playTap();
-              setIsTrackMenuOpen(!isTrackMenuOpen);
               setIsStreakMenuOpen(false);
               setIsHeartsMenuOpen(false);
+              onOpenProfile?.();
             }}
-            className="flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-white hover:bg-[#FFF7ED] border-2 border-[#F1EAE2] hover:border-[#FDBA74] text-[#292524] font-black text-sm cursor-pointer shadow-xs active:translate-y-0.5 transition-all"
+            className="p-2 rounded-xl text-[#78716C] hover:text-[#0D9488] hover:bg-[#F0FDFA] cursor-pointer transition-colors"
+            title="Configurar notificações push"
+            aria-label="Configurar notificações push"
           >
-            <div className="flex items-center gap-1.5">
-              <span className="text-lg">🇧🇷</span>
-              <span className="text-base">🤟</span>
-            </div>
-            <div className="text-left">
-              <div className="text-[10px] uppercase tracking-wider text-[#EA580C] font-extrabold leading-none">
-                EASYLIB LIBRAS
-              </div>
-              <div className="text-xs font-black text-[#292524] hidden sm:block">
-                {currentTrack.title.split(':')[0]}
-              </div>
-            </div>
-            <ChevronDown className="w-4 h-4 text-[#A8A29E] ml-1" />
+            <Bell className="w-4 h-4 sm:w-5 sm:h-5" />
           </button>
 
-          {/* Tracks Dropdown */}
-          {isTrackMenuOpen && (
-            <div className="absolute top-12 left-0 w-80 bg-white rounded-3xl border-2 border-[#F1EAE2] shadow-2xl p-2.5 z-50 animate-fade-in space-y-1.5">
-              <div className="px-3 py-1 text-xs font-black uppercase tracking-wider text-[#A8A29E] flex items-center justify-between">
-                <span>Trilhas de Libras</span>
-                <span className="text-[10px] bg-orange-100 text-[#EA580C] px-2 py-0.5 rounded-full font-bold">100% Sinais</span>
-              </div>
-              {LIBRAS_TRACKS.map((track) => {
-                const isSelected = track.id === userProfile.selectedTrack;
-                return (
-                  <button
-                    key={track.id}
-                    onClick={() => {
-                      soundService.playTap();
-                      onSelectTrack(track.id);
-                      setIsTrackMenuOpen(false);
-                    }}
-                    className={`
-                      w-full flex items-center justify-between p-3 rounded-2xl text-left font-bold cursor-pointer transition-all
-                      ${isSelected ? 'bg-orange-50 text-orange-900 border-2 border-orange-300' : 'hover:bg-[#FFF7ED] text-[#44403C] border border-transparent'}
-                    `}
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-2xl bg-white border border-[#F1EAE2] flex items-center justify-center text-xl shadow-xs shrink-0">
-                        {track.badge}
-                      </div>
-                      <div>
-                        <div className="font-black text-xs sm:text-sm text-[#292524]">{track.title}</div>
-                        <div className="text-[11px] text-[#78716C] line-clamp-1">{track.subtitle}</div>
-                      </div>
-                    </div>
-                    {isSelected && <Check className="w-5 h-5 text-[#EA580C] stroke-[3] shrink-0 ml-2" />}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-
-        {/* Right Status Counters */}
-        <div className="flex items-center gap-2 sm:gap-4">
-          
           {/* Sound Toggle */}
           <button
+            type="button"
             onClick={toggleSound}
-            className="p-2 rounded-xl text-[#A8A29E] hover:text-[#292524] hover:bg-[#FFF7ED] cursor-pointer"
-            title={isMuted ? "Ativar áudio" : "Desativar áudio"}
+            className="p-2 rounded-xl text-[#78716C] hover:text-[#1C1917] hover:bg-[#F3F0EA] cursor-pointer transition-colors"
+            title={isMuted ? 'Ativar áudio' : 'Desativar áudio'}
+            aria-label={isMuted ? 'Ativar áudio' : 'Desativar áudio'}
           >
-            {isMuted ? <VolumeX className="w-5 h-5 text-[#EF4444]" /> : <Volume2 className="w-5 h-5 text-[#78716C]" />}
+            {isMuted ? (
+              <VolumeX className="w-4 h-4 sm:w-5 sm:h-5 text-[#E11D48]" />
+            ) : (
+              <Volume2 className="w-4 h-4 sm:w-5 sm:h-5" />
+            )}
           </button>
 
-          {/* Streak 🔥 (Warm Flame) */}
+          {/* Streak */}
           <div className="relative">
             <button
+              type="button"
               onClick={() => {
                 soundService.playTap();
                 setIsStreakMenuOpen(!isStreakMenuOpen);
-                setIsTrackMenuOpen(false);
                 setIsHeartsMenuOpen(false);
               }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl hover:bg-orange-50 text-[#EA580C] font-black text-sm cursor-pointer active:translate-y-0.5 select-none border border-transparent hover:border-orange-200"
+              className="flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-xl hover:bg-[#FFF1E6] text-[#EA580C] font-bold text-xs sm:text-sm cursor-pointer select-none transition-colors"
+              title="Ofensiva diária"
             >
-              <Flame className="w-5 h-5 fill-[#EA580C] text-[#EA580C] animate-pulse" />
+              <Flame className="w-4 h-4 sm:w-5 sm:h-5 fill-[#EA580C] text-[#EA580C]" />
               <span>{userProfile.streakDays}</span>
             </button>
 
-            {/* Streak Popover */}
             {isStreakMenuOpen && (
-              <div className="absolute top-12 right-0 sm:right-auto sm:-left-20 w-72 bg-white rounded-3xl border-2 border-[#F1EAE2] shadow-2xl p-5 z-50 animate-fade-in space-y-4">
+              <div className="absolute top-12 right-0 w-72 bg-white rounded-2xl border border-[#E8E2D9] shadow-lg p-4 z-50 animate-fade-in space-y-3.5">
                 <div className="flex items-center justify-between">
                   <div>
-                    <h4 className="text-base font-black text-[#292524]">Ofensiva de {userProfile.streakDays} dias!</h4>
-                    <p className="text-xs text-[#78716C]">Pratique Libras todo dia para fixar os sinais.</p>
+                    <h4 className="text-base font-bold text-[#1C1917]">
+                      {userProfile.streakDays} dias seguidos
+                    </h4>
+                    <p className="text-xs text-[#57534E]">
+                      Pratique um pouco por dia para manter o ritmo.
+                    </p>
                   </div>
-                  <Flame className="w-8 h-8 fill-[#EA580C] text-[#EA580C]" />
+                  <Flame className="w-7 h-7 fill-[#EA580C] text-[#EA580C] shrink-0" />
                 </div>
 
-                {/* Days week grid */}
-                <div className="grid grid-cols-7 gap-1 pt-1 text-center">
+                <div className="grid grid-cols-7 gap-1 text-center">
                   {daysOfWeek.map((d, i) => (
                     <div key={i} className="space-y-1">
-                      <span className="text-[10px] font-black text-[#A8A29E]">{d.label}</span>
-                      <div className={`w-8 h-8 mx-auto rounded-full flex items-center justify-center font-black text-xs ${
-                        d.done 
-                          ? 'bg-[#EA580C] text-white shadow-xs' 
-                          : d.isToday
-                          ? 'border-2 border-dashed border-[#EA580C] text-[#EA580C]'
-                          : 'bg-[#F5F5F4] text-[#A8A29E]'
-                      }`}>
+                      <span className="text-[10px] font-bold text-[#78716C]">{d.label}</span>
+                      <div
+                        className={`w-7 h-7 mx-auto rounded-full flex items-center justify-center font-bold text-xs ${
+                          d.done
+                            ? 'bg-[#EA580C] text-white'
+                            : d.isToday
+                            ? 'border-2 border-dashed border-[#EA580C] text-[#EA580C]'
+                            : 'bg-[#F3F0EA] text-[#78716C]'
+                        }`}
+                      >
                         {d.done ? '✓' : ''}
                       </div>
                     </div>
                   ))}
                 </div>
 
-                <div className="pt-2 border-t border-[#F1EAE2] flex items-center justify-between text-xs font-bold text-[#78716C]">
-                  <span>Bloqueio de Ofensiva:</span>
-                  <span className="font-black text-[#EA580C]">
-                    {userProfile.streakFreezeCount > 0 ? `${userProfile.streakFreezeCount} equipado` : 'Nenhum'}
+                <div className="pt-2.5 border-t border-[#E8E2D9] flex items-center justify-between text-xs font-semibold text-[#57534E]">
+                  <span>Bloqueio de ofensiva</span>
+                  <span className="font-bold text-[#0F766E]">
+                    {userProfile.streakFreezeCount > 0
+                      ? `${userProfile.streakFreezeCount} ativo`
+                      : 'Nenhum'}
                   </span>
                 </div>
               </div>
             )}
           </div>
 
-          {/* Gems 💎 (Topaz Gold) */}
-          <div 
+          {/* Gems */}
+          <button
+            type="button"
             onClick={() => {
               soundService.playTap();
+              setIsStreakMenuOpen(false);
+              setIsHeartsMenuOpen(false);
               onOpenShop();
             }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl hover:bg-amber-50 text-[#D97706] font-black text-sm cursor-pointer select-none border border-transparent hover:border-amber-200"
-            title="Gemas EasyLib"
+            className="flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-xl hover:bg-[#FEF3C7]/60 text-[#B45309] font-bold text-xs sm:text-sm cursor-pointer select-none transition-colors"
+            title="Gemas disponíveis"
           >
-            <Gem className="w-5 h-5 fill-[#F59E0B] text-[#D97706]" />
+            <Gem className="w-4 h-4 sm:w-5 sm:h-5 fill-[#F59E0B] text-[#B45309]" />
             <span>{userProfile.gems}</span>
-          </div>
+          </button>
 
-          {/* Hearts ❤️ (Warm Ruby/Coral) */}
+          {/* Hearts */}
           <div className="relative">
             <button
+              type="button"
               onClick={() => {
                 soundService.playTap();
                 setIsHeartsMenuOpen(!isHeartsMenuOpen);
-                setIsTrackMenuOpen(false);
                 setIsStreakMenuOpen(false);
               }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-2xl hover:bg-rose-50 text-[#E11D48] font-black text-sm cursor-pointer active:translate-y-0.5 select-none border border-transparent hover:border-rose-200"
+              className="flex items-center gap-1 px-2 sm:px-2.5 py-1.5 rounded-xl hover:bg-rose-50 text-[#E11D48] font-bold text-xs sm:text-sm cursor-pointer select-none transition-colors"
+              title="Vidas"
             >
               {userProfile.isSuperDuolingo ? (
-                <div className="flex items-center gap-1 text-[#EA580C]">
-                  <InfinityIcon className="w-5 h-5 stroke-[3]" />
-                  <span className="text-xs font-black uppercase">PLUS</span>
+                <div className="flex items-center gap-1 text-[#0F766E]">
+                  <InfinityIcon className="w-5 h-5 stroke-[2.5]" />
+                  <span className="text-xs font-bold uppercase">Plus</span>
                 </div>
               ) : (
                 <>
-                  <Heart className="w-5 h-5 fill-[#E11D48] text-[#E11D48]" />
+                  <Heart className="w-4 h-4 sm:w-5 sm:h-5 fill-[#E11D48] text-[#E11D48]" />
                   <span>{userProfile.hearts}</span>
                 </>
               )}
             </button>
 
-            {/* Hearts Popover */}
             {isHeartsMenuOpen && (
-              <div className="absolute top-12 right-0 w-72 bg-white rounded-3xl border-2 border-[#F1EAE2] shadow-2xl p-5 z-50 animate-fade-in space-y-4">
-                <div className="flex items-center justify-between">
+              <div className="absolute top-12 right-0 w-72 bg-white rounded-2xl border border-[#E8E2D9] shadow-lg p-4 z-50 animate-fade-in space-y-3.5">
+                <div className="flex items-center justify-between gap-2">
                   <div className="space-y-0.5">
-                    <h4 className="text-base font-black text-[#292524]">
-                      {userProfile.isSuperDuolingo ? 'Vidas Ilimitadas' : `Você tem ${userProfile.hearts} vidas`}
+                    <h4 className="text-base font-bold text-[#1C1917]">
+                      {userProfile.isSuperDuolingo
+                        ? 'Vidas ilimitadas'
+                        : `${userProfile.hearts} vidas restantes`}
                     </h4>
-                    <p className="text-xs text-[#78716C]">
-                      {userProfile.isSuperDuolingo 
-                        ? 'Com o EasyLib Plus seus erros de sinalização não gastam vidas!' 
-                        : 'Vidas diminuem quando você erra a identificação do sinal.'}
+                    <p className="text-xs text-[#57534E]">
+                      {userProfile.isSuperDuolingo
+                        ? 'Você pode errar sem perder vidas durante os treinos.'
+                        : 'Cada erro em uma lição consome uma vida.'}
                     </p>
                   </div>
-                  <Heart className="w-8 h-8 fill-[#E11D48] text-[#E11D48]" />
+                  <Heart className="w-7 h-7 fill-[#E11D48] text-[#E11D48] shrink-0" />
                 </div>
 
                 {!userProfile.isSuperDuolingo && (
                   <button
+                    type="button"
                     onClick={() => {
                       soundService.playCorrect();
                       onRefillHearts();
                       setIsHeartsMenuOpen(false);
                     }}
-                    className="w-full py-2.5 px-3 rounded-2xl bg-[#FF6B00] hover:bg-[#EA580C] text-white font-black text-xs uppercase tracking-wider border-b-4 border-[#C2410C] cursor-pointer shadow-md transition-all active:translate-y-0.5"
+                    className="tactile-btn w-full py-2.5 px-3 rounded-xl bg-[#EA580C] hover:bg-[#DC4F06] text-white font-bold text-xs uppercase tracking-wider border-b-4 border-[#9A3412] cursor-pointer"
                   >
-                    Recarregar Vidas (Cheio)
+                    Recarregar vidas
                   </button>
                 )}
 
                 <button
+                  type="button"
                   onClick={() => {
                     soundService.playCorrect();
                     onToggleSuper();
                     setIsHeartsMenuOpen(false);
                   }}
-                  className="w-full py-2.5 px-3 rounded-2xl bg-gradient-to-r from-[#FF6B00] to-[#E11D48] hover:opacity-95 text-white font-black text-xs uppercase tracking-wider border-b-4 border-[#9F1239] cursor-pointer shadow-md flex items-center justify-center gap-1.5 transition-all active:translate-y-0.5"
+                  className="tactile-btn w-full py-2.5 px-3 rounded-xl bg-[#0D9488] hover:bg-[#0F766E] text-white font-bold text-xs uppercase tracking-wider border-b-4 border-[#115E59] cursor-pointer"
                 >
-                  <Sparkles className="w-4 h-4 fill-white" />
-                  <span>{userProfile.isSuperDuolingo ? 'Desativar Plus' : 'Ativar EasyLib Plus'}</span>
+                  {userProfile.isSuperDuolingo ? 'Desativar Plus' : 'Ativar EasyLib Plus'}
                 </button>
               </div>
             )}
           </div>
 
+          {/* Auth CTA */}
+          {onOpenAuthModal && !firebaseUser && (
+            <button
+              type="button"
+              onClick={() => {
+                soundService.playTap();
+                onOpenAuthModal();
+              }}
+              disabled={authBusy}
+              className="tactile-btn hidden sm:flex items-center gap-1.5 px-3.5 py-1.5 rounded-xl bg-[#EA580C] hover:bg-[#DC4F06] disabled:opacity-60 text-white font-bold text-xs border-b-[3px] border-[#9A3412] cursor-pointer whitespace-nowrap"
+            >
+              <BookmarkCheck className="w-3.5 h-3.5 shrink-0" />
+              <span>
+                {authBusy ? 'Conectando...' : hasLocalProgress ? 'Entrar' : 'Entrar'}
+              </span>
+            </button>
+          )}
         </div>
-
       </div>
     </header>
   );

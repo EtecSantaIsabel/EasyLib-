@@ -9,12 +9,16 @@ export interface LibrasTrackInfo {
 }
 
 export type ExerciseType = 
-  | 'identify_sign'             // Show sign/handshape -> pick Portuguese meaning
-  | 'translate_to_libras'       // Portuguese sentence -> build Libras grammar tiles (e.g. EU LIBRAS APRENDER)
-  | 'dactylology_spelling'      // Show manual alphabet hands -> type/pick word, or vice-versa
-  | 'match_sign_pairs'          // Match 5 sign illustrations with words
-  | 'parameter_quiz'            // Identify CM (Configuração de Mão), PA (Ponto de Articulação) or M (Movimento)
-  | 'nmf_facial_quiz'           // Facial expression & head tilt identification (pergunta, negação, dúvida)
+  | 'new_sign_cards'            // Format 1: Sinal Novo with 4 visual sign cards + CM label
+  | 'slow_reading'              // Format 2: Leitura de Sinal com Câmera Lenta (0.5x Tartaruga) + Repetir
+  | 'dactylology_spelling'      // Format 3: Leitura de Datilologia sequencial (A-Z, Ç, acentos)
+  | 'match_sign_pairs'          // Format 4: Combine os Pares (4 palavras à esquerda x 4 mini-sinais em loop à direita)
+  | 'camera_practice'           // Format 5: Prática na Câmera com MediaPipe Direcionado (Single-Target)
+  | 'translate_to_libras'       // Format 6: Monte a Frase em Glosas (sintaxe própria da Libras)
+  | 'dialogue_completion'       // Format 7: Complete o Diálogo em Libras (pergunta + NMF -> 3 respostas visuais)
+  | 'identify_sign'             // Legacy alias compatible with visual sign selection
+  | 'parameter_quiz'            // Parameter quiz (CM, PA, M, NMF)
+  | 'nmf_facial_quiz'           // Facial expression & head tilt identification
   | 'fill_in_blank_sign'        // Complete sentence with appropriate sign
   | 'story_dialogue';           // Libras comic dialogue conversation
 
@@ -45,6 +49,7 @@ export interface SignData {
 export interface MatchPair {
   id: string;
   signId: string;
+  catalogSignId?: string;
   signName: string;
   signGlyph: string;
   handshape: string;
@@ -70,8 +75,12 @@ export interface Exercise {
   id: string;
   type: ExerciseType;
   prompt: string;
+  isNewSign?: boolean;
   sign?: SignData;
+  targetSignId?: string;
+  dactylologyWord?: string;
   targetGloss?: string;        // Libras sentence gloss e.g. "MEU NOME M-A-R-I-A"
+  glossSequence?: string[];    // Ordered gloss tokens for visual animation preview
   portugueseSentence?: string; // "Meu nome é Maria"
   wordBank?: string[];
   correctAnswers: string[];
@@ -80,15 +89,28 @@ export interface Exercise {
   options?: { 
     id: string; 
     text: string; 
+    gloss?: string;
+    catalogSignId?: string;
     glyph?: string; 
     handshape?: string;
     explanation?: string;
+    nmfLabel?: string;
     realImageUrl?: string;
   }[];
   matchPairs?: MatchPair[];
   storyLines?: StoryDialogueLine[];
+  dialoguePrompt?: {
+    speaker: string;
+    gloss: string;
+    portuguese: string;
+    nmfType: 'interrogative_brows_up' | 'wh_brows_furrowed' | 'positive_smile' | 'neutral';
+    nmfLabel: string;
+    catalogSignId?: string;
+  };
   parameterType?: 'CM' | 'PA' | 'M' | 'NMF';
+  signMeaning?: string;
   grammarTip?: string;
+  mistakeHint?: string;
 }
 
 export type NodeType = 'lesson' | 'story' | 'chest' | 'trophy' | 'rapid';
@@ -109,10 +131,11 @@ export interface UnitGuidebook {
   signsOverview: {
     sign: string;
     meaning: string;
-    cm: string;
-    pa: string;
-    mov: string;
-    nmf: string;
+    slug?: string;
+    cm?: string;
+    pa?: string;
+    mov?: string;
+    nmf?: string;
   }[];
   grammarRule: {
     title: string;
@@ -224,4 +247,4 @@ export interface UserProfile {
   mistakeHistory: Exercise[];
 }
 
-export type MainTabType = 'learn' | 'camera' | 'dictionary' | 'practice' | 'leaderboards' | 'quests' | 'shop' | 'profile';
+export type MainTabType = 'learn' | 'dictionary' | 'practice' | 'leaderboards' | 'quests' | 'shop' | 'profile';

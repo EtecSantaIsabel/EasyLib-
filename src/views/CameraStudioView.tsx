@@ -5,7 +5,7 @@ import {
   Volume2,
   Copy,
   Trash2,
-  Sparkles,
+  Languages,
   Check,
   FlipHorizontal,
   RefreshCw,
@@ -18,11 +18,11 @@ import {
   SlidersHorizontal,
   AlertTriangle,
   ShieldCheck,
+  BookmarkPlus,
   X
 } from 'lucide-react';
 import {
   FilesetResolver,
-  HolisticLandmarker,
   HandLandmarker,
   PoseLandmarker,
   FaceLandmarker,
@@ -60,6 +60,12 @@ interface CameraStudioViewProps {
   userProfile?: UserProfile;
   onClose?: () => void;
   onEarnReward?: (xp: number, gems: number) => void;
+  onSaveTranslation?: (
+    glosses: string[],
+    portugueseText: string,
+    nmfExpression: NmfExpressionType
+  ) => Promise<void>;
+  isAuthenticated?: boolean;
 }
 
 const NMF_LABELS: Record<NmfExpressionType, string> = {
@@ -72,32 +78,94 @@ const NMF_LABELS: Record<NmfExpressionType, string> = {
   any: 'Neutra'
 };
 
+const MODEL_URLS = {
+  hand:
+    'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
+  pose:
+    'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
+  face:
+    'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task'
+};
+
+async function createWithDelegateFallback<T>(
+  factory: (delegate: 'GPU' | 'CPU') => Promise<T>,
+  label: string
+): Promise<T | null> {
+  for (const delegate of ['GPU', 'CPU'] as const) {
+    try {
+      return await factory(delegate);
+    } catch (err) {
+      console.warn(`${label} (${delegate}) init failed:`, err);
+    }
+  }
+  return null;
+}
+
+function getCameraErrorMessage(err: unknown): string {
+  const name = err && typeof err === 'object' && 'name' in err ? String((err as { name: string }).name) : '';
+  const message = err instanceof Error ? err.message : '';
+
+  if (name === 'NotAllowedError' || name === 'PermissionDeniedError') {
+    return 'Permissão de câmera negada. Autorize o uso da câmera nas configurações do navegador e clique em tentar novamente.';
+  }
+  if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
+    return 'Nenhuma câmera foi detectada neste dispositivo.';
+  }
+  if (name === 'NotReadableError' || name === 'TrackStartError') {
+    return 'A câmera já está em uso por outro aplicativo ou aba. Feche o outro app e tente novamente.';
+  }
+  if (name === 'OverconstrainedError') {
+    return 'A resolução solicitada não é suportada pela sua câmera.';
+  }
+  if (message) {
+    return `Não foi possível iniciar a câmera (${message}).`;
+  }
+  return 'Não foi possível iniciar a câmera. Verifique se o dispositivo possui webcam disponível.';
+}
+
 export const CameraStudioView: React.FC<CameraStudioViewProps> = ({
-  onClose
+  onClose,
+  onSaveTranslation,
+  isAuthenticated = false
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
-  // MediaPipe Vision Tasks (Holistic primary, Hand+Pose+Face fallback)
-  const holisticLandmarkerRef = useRef<HolisticLandmarker | null>(null);
+  // Live MediaStream ref to avoid stale closures on unmount or camera switches
+  const streamRef = useRef<MediaStream | null>(null);
+  const cameraRequestIdRef = useRef<number>(0);
+
+  // MediaPipe Vision Tasks (Fast HandLandmarker primary + parallel PoseLandmarker & FaceLandmarker)
   const handLandmarkerRef = useRef<HandLandmarker | null>(null);
   const poseLandmarkerRef = useRef<PoseLandmarker | null>(null);
   const faceLandmarkerRef = useRef<FaceLandmarker | null>(null);
-  const usingHolisticRef = useRef<boolean>(false);
   const requestAnimationRef = useRef<number | null>(null);
+  const lastDetectTimestampRef = useRef<number>(0);
+  const lastHandTsRef = useRef<number>(0);
+  const lastPoseTsRef = useRef<number>(0);
+  const lastFaceTsRef = useRef<number>(0);
+  const lastPoseInferAtRef = useRef<number>(0);
+  const lastFaceInferAtRef = useRef<number>(0);
+  const lastPoseLandmarksRef = useRef<{ x: number; y: number; z?: number }[] | undefined>(undefined);
+  const lastFaceLandmarksRef = useRef<{ x: number; y: number; z?: number }[] | undefined>(undefined);
+  const lastFaceBlendshapesRef = useRef<any[] | undefined>(undefined);
+  const lastWarnAtRef = useRef<number>(0);
+  const drawingUtilsCacheRef = useRef<{ ctx: CanvasRenderingContext2D; utils: DrawingUtils } | null>(null);
 
   // Temporal & Hold-to-Confirm state machines
   const temporalBufferRef = useRef<TemporalMotionBuffer>(new TemporalMotionBuffer(36, 1500));
   const holdStateRef = useRef<HoldToConfirmState>(createInitialHoldState());
 
   // Camera states
-  const [stream, setStream] = useState<MediaStream | null>(null);
   const [cameraActive, setCameraActive] = useState<boolean>(false);
+  const [isStartingCamera, setIsStartingCamera] = useState<boolean>(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('user');
   const [isMirrored, setIsMirrored] = useState<boolean>(true);
   const [isModelLoading, setIsModelLoading] = useState<boolean>(true);
-  const [trackingEngineMode, setTrackingEngineMode] = useState<'holistic' | 'multimodal' | 'loading'>('loading');
+  const [modelError, setModelError] = useState<string | null>(null);
+  const [modelRetryNonce, setModelRetryNonce] = useState<number>(0);
+  const [trackingEngineMode, setTrackingEngineMode] = useState<'multimodal' | 'loading' | 'error'>('loading');
 
   // Recognition & Calibration states
   const [isTranslating, setIsTranslating] = useState<boolean>(true);
@@ -120,6 +188,8 @@ export const CameraStudioView: React.FC<CameraStudioViewProps> = ({
   const [signSequence, setSignSequence] = useState<RecognizedSign[]>([]);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
+  const [savedNotice, setSavedNotice] = useState<boolean>(false);
+  const [isSavingTranslation, setIsSavingTranslation] = useState<boolean>(false);
   const [showSignsGuide, setShowSignsGuide] = useState<boolean>(false);
 
   // Refs synced for animation loop
@@ -127,152 +197,147 @@ export const CameraStudioView: React.FC<CameraStudioViewProps> = ({
   confidenceThresholdRef.current = confidenceThreshold;
   const holdDurationMsRef = useRef(holdDurationMs);
   holdDurationMsRef.current = holdDurationMs;
-  const isMirroredRef = useRef(isMirrored);
-  isMirroredRef.current = isMirrored;
+  const facingModeRef = useRef(facingMode);
+  facingModeRef.current = facingMode;
 
-  // Initialize MediaPipe Multimodal Vision (Holistic primary, Hand+Pose+Face fallback)
+  const closeLandmarkers = useCallback(() => {
+    try {
+      handLandmarkerRef.current?.close();
+    } catch {
+      // ignore
+    }
+    handLandmarkerRef.current = null;
+    try {
+      poseLandmarkerRef.current?.close();
+    } catch {
+      // ignore
+    }
+    poseLandmarkerRef.current = null;
+    try {
+      faceLandmarkerRef.current?.close();
+    } catch {
+      // ignore
+    }
+    faceLandmarkerRef.current = null;
+    lastPoseLandmarksRef.current = undefined;
+    lastFaceLandmarksRef.current = undefined;
+    lastFaceBlendshapesRef.current = undefined;
+  }, []);
+
+  // Initialize MediaPipe Multimodal Vision (HandLandmarker first for instant startup; Pose & Face attach in parallel)
   useEffect(() => {
     let isMounted = true;
 
+    async function resolveVisionFileset() {
+      const wasmPaths = [
+        '/mediapipe-wasm',
+        'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm'
+      ];
+      let lastError: unknown = null;
+      for (const wasmPath of wasmPaths) {
+        try {
+          return await FilesetResolver.forVisionTasks(wasmPath);
+        } catch (err) {
+          lastError = err;
+          console.warn(`Failed loading MediaPipe WASM from ${wasmPath}:`, err);
+        }
+      }
+      throw lastError ?? new Error('WASM initialization failed');
+    }
+
     async function initMediaPipeVision() {
+      closeLandmarkers();
+      setIsModelLoading(true);
+      setModelError(null);
+      setTrackingEngineMode('loading');
+
       try {
-        setIsModelLoading(true);
-        setTrackingEngineMode('loading');
-
-        const vision = await FilesetResolver.forVisionTasks(
-          'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@1.0.1/wasm'
-        );
-
+        const vision = await resolveVisionFileset();
         if (!isMounted) return;
 
-        // 1. Try MediaPipe HolisticLandmarker (Hands + Pose + Face simultaneously)
-        let holisticReady = false;
-        for (const delegate of ['GPU', 'CPU'] as const) {
-          try {
-            holisticLandmarkerRef.current = await HolisticLandmarker.createFromOptions(vision, {
-              baseOptions: {
-                modelAssetPath:
-                  'https://storage.googleapis.com/mediapipe-models/holistic_landmarker/holistic_landmarker/float16/1/holistic_landmarker.task',
-                delegate
-              },
+        // Unlock translation immediately once HandLandmarker is ready; Pose and Face enrich concurrently
+        const handPromise = createWithDelegateFallback(
+          (delegate) =>
+            HandLandmarker.createFromOptions(vision, {
+              baseOptions: { modelAssetPath: MODEL_URLS.hand, delegate },
               runningMode: 'VIDEO',
-              minFaceDetectionConfidence: 0.5,
-              minFacePresenceConfidence: 0.5,
-              minPoseDetectionConfidence: 0.5,
-              minPosePresenceConfidence: 0.5,
-              minHandLandmarksConfidence: 0.5,
-              outputFaceBlendshapes: true
-            });
-            usingHolisticRef.current = true;
-            holisticReady = true;
-            break;
-          } catch (err) {
-            console.warn(`HolisticLandmarker (${delegate}) fallback check:`, err);
+              numHands: 2,
+              minHandDetectionConfidence: 0.5,
+              minHandPresenceConfidence: 0.5,
+              minTrackingConfidence: 0.5
+            }),
+          'HandLandmarker'
+        ).then((hand) => {
+          if (!isMounted) {
+            hand?.close();
+            return null;
           }
-        }
-
-        if (!isMounted) return;
-
-        if (holisticReady) {
-          setTrackingEngineMode('holistic');
-          setIsModelLoading(false);
-          return;
-        }
-
-        // 2. Fallback: Multimodal HandLandmarker + PoseLandmarker + FaceLandmarker
-        usingHolisticRef.current = false;
-
-        try {
-          handLandmarkerRef.current = await HandLandmarker.createFromOptions(vision, {
-            baseOptions: {
-              modelAssetPath:
-                'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
-              delegate: 'GPU'
-            },
-            runningMode: 'VIDEO',
-            numHands: 2,
-            minHandDetectionConfidence: 0.55,
-            minHandPresenceConfidence: 0.55,
-            minTrackingConfidence: 0.55
-          });
-        } catch {
-          handLandmarkerRef.current = await HandLandmarker.createFromOptions(vision, {
-            baseOptions: {
-              modelAssetPath:
-                'https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task',
-              delegate: 'CPU'
-            },
-            runningMode: 'VIDEO',
-            numHands: 2,
-            minHandDetectionConfidence: 0.55,
-            minHandPresenceConfidence: 0.55,
-            minTrackingConfidence: 0.55
-          });
-        }
-
-        try {
-          poseLandmarkerRef.current = await PoseLandmarker.createFromOptions(vision, {
-            baseOptions: {
-              modelAssetPath:
-                'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
-              delegate: 'GPU'
-            },
-            runningMode: 'VIDEO',
-            minPoseDetectionConfidence: 0.5,
-            minPosePresenceConfidence: 0.5,
-            minTrackingConfidence: 0.5
-          });
-        } catch {
-          poseLandmarkerRef.current = await PoseLandmarker.createFromOptions(vision, {
-            baseOptions: {
-              modelAssetPath:
-                'https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task',
-              delegate: 'CPU'
-            },
-            runningMode: 'VIDEO',
-            minPoseDetectionConfidence: 0.5,
-            minPosePresenceConfidence: 0.5,
-            minTrackingConfidence: 0.5
-          });
-        }
-
-        try {
-          faceLandmarkerRef.current = await FaceLandmarker.createFromOptions(vision, {
-            baseOptions: {
-              modelAssetPath:
-                'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
-              delegate: 'GPU'
-            },
-            runningMode: 'VIDEO',
-            numFaces: 1,
-            outputFaceBlendshapes: true,
-            minFaceDetectionConfidence: 0.5,
-            minFacePresenceConfidence: 0.5,
-            minTrackingConfidence: 0.5
-          });
-        } catch {
-          faceLandmarkerRef.current = await FaceLandmarker.createFromOptions(vision, {
-            baseOptions: {
-              modelAssetPath:
-                'https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task',
-              delegate: 'CPU'
-            },
-            runningMode: 'VIDEO',
-            numFaces: 1,
-            outputFaceBlendshapes: true,
-            minFaceDetectionConfidence: 0.5,
-            minFacePresenceConfidence: 0.5,
-            minTrackingConfidence: 0.5
-          });
-        }
-
-        if (isMounted) {
+          if (!hand) {
+            setTrackingEngineMode('error');
+            setModelError(
+              'Não foi possível carregar o modelo de detecção de mãos. Verifique sua conexão e clique em tentar novamente.'
+            );
+            setIsModelLoading(false);
+            return null;
+          }
+          handLandmarkerRef.current = hand;
           setTrackingEngineMode('multimodal');
           setIsModelLoading(false);
-        }
+          return hand;
+        });
+
+        const posePromise = createWithDelegateFallback(
+          (delegate) =>
+            PoseLandmarker.createFromOptions(vision, {
+              baseOptions: { modelAssetPath: MODEL_URLS.pose, delegate },
+              runningMode: 'VIDEO',
+              minPoseDetectionConfidence: 0.5,
+              minPosePresenceConfidence: 0.5,
+              minTrackingConfidence: 0.5
+            }),
+          'PoseLandmarker'
+        ).then((pose) => {
+          if (!isMounted) {
+            pose?.close();
+            return null;
+          }
+          if (pose) {
+            poseLandmarkerRef.current = pose;
+          }
+          return pose;
+        });
+
+        const facePromise = createWithDelegateFallback(
+          (delegate) =>
+            FaceLandmarker.createFromOptions(vision, {
+              baseOptions: { modelAssetPath: MODEL_URLS.face, delegate },
+              runningMode: 'VIDEO',
+              numFaces: 1,
+              outputFaceBlendshapes: true,
+              minFaceDetectionConfidence: 0.5,
+              minFacePresenceConfidence: 0.5,
+              minTrackingConfidence: 0.5
+            }),
+          'FaceLandmarker'
+        ).then((face) => {
+          if (!isMounted) {
+            face?.close();
+            return null;
+          }
+          if (face) {
+            faceLandmarkerRef.current = face;
+          }
+          return face;
+        });
+
+        await Promise.allSettled([handPromise, posePromise, facePromise]);
       } catch (err) {
         console.error('Error initializing MediaPipe multimodal vision:', err);
         if (isMounted) {
+          setTrackingEngineMode('error');
+          setModelError(
+            'Falha ao inicializar o motor de visão MediaPipe neste navegador.'
+          );
           setIsModelLoading(false);
         }
       }
@@ -282,75 +347,127 @@ export const CameraStudioView: React.FC<CameraStudioViewProps> = ({
 
     return () => {
       isMounted = false;
-      holisticLandmarkerRef.current?.close();
-      holisticLandmarkerRef.current = null;
-      handLandmarkerRef.current?.close();
-      handLandmarkerRef.current = null;
-      poseLandmarkerRef.current?.close();
-      poseLandmarkerRef.current = null;
-      faceLandmarkerRef.current?.close();
-      faceLandmarkerRef.current = null;
+      closeLandmarkers();
     };
-  }, []);
+  }, [modelRetryNonce, closeLandmarkers]);
 
-  const startCamera = async () => {
-    setCameraError(null);
-    try {
-      if (stream) {
-        stream.getTracks().forEach((track) => track.stop());
-      }
-
-      const mediaStream = await navigator.mediaDevices.getUserMedia({
-        video: {
-          facingMode,
-          width: { ideal: 1280 },
-          height: { ideal: 720 }
-        },
-        audio: false
-      });
-
-      setStream(mediaStream);
-      if (videoRef.current) {
-        videoRef.current.srcObject = mediaStream;
-        videoRef.current.onloadedmetadata = () => {
-          videoRef.current?.play().catch((e) => console.log('Auto-play error:', e));
-        };
-      }
-      setCameraActive(true);
-    } catch (err: any) {
-      console.warn('Camera access issue:', err);
-      setCameraError(
-        err.name === 'NotAllowedError'
-          ? 'Permissão de câmera não concedida. Por favor, permita o acesso à câmera no seu navegador.'
-          : 'Não foi possível iniciar a câmera. Verifique se o dispositivo possui webcam disponível.'
-      );
-      setCameraActive(false);
-    }
-  };
-
-  const stopCamera = () => {
+  const stopCamera = useCallback(() => {
+    cameraRequestIdRef.current += 1;
     if (requestAnimationRef.current) {
       cancelAnimationFrame(requestAnimationRef.current);
       requestAnimationRef.current = null;
     }
-    if (stream) {
-      stream.getTracks().forEach((track) => track.stop());
-      setStream(null);
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => {
+        try {
+          track.stop();
+        } catch {
+          // ignore
+        }
+      });
+      streamRef.current = null;
     }
     if (videoRef.current) {
+      videoRef.current.onloadedmetadata = null;
       videoRef.current.srcObject = null;
     }
     temporalBufferRef.current.clear();
     holdStateRef.current = createInitialHoldState();
+    setHoldProgress(0);
     setCameraActive(false);
-  };
+  }, []);
+
+  const startCamera = useCallback(async () => {
+    stopCamera();
+    const requestId = ++cameraRequestIdRef.current;
+    setCameraError(null);
+    setIsStartingCamera(true);
+
+    try {
+      if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+        throw new Error('Navegador sem suporte a getUserMedia ou contexto não seguro (HTTPS).');
+      }
+
+      let mediaStream: MediaStream;
+      try {
+        mediaStream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: facingMode },
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
+        });
+      } catch (primaryErr: unknown) {
+        const errName =
+          primaryErr && typeof primaryErr === 'object' && 'name' in primaryErr
+            ? String((primaryErr as { name: string }).name)
+            : '';
+        if (errName === 'OverconstrainedError' || errName === 'ConstraintNotSatisfiedError') {
+          mediaStream = await navigator.mediaDevices.getUserMedia({
+            video: true,
+            audio: false
+          });
+        } else {
+          throw primaryErr;
+        }
+      }
+
+      // If unmounted or superseded by a newer request while awaiting permission, release tracks immediately
+      if (cameraRequestIdRef.current !== requestId) {
+        mediaStream.getTracks().forEach((t) => t.stop());
+        return;
+      }
+
+      streamRef.current = mediaStream;
+
+      const video = videoRef.current;
+      if (video) {
+        video.srcObject = mediaStream;
+        await new Promise<void>((resolve) => {
+          if (video.readyState >= 1) {
+            resolve();
+            return;
+          }
+          const onMeta = () => {
+            video.removeEventListener('loadedmetadata', onMeta);
+            resolve();
+          };
+          video.addEventListener('loadedmetadata', onMeta);
+        });
+        if (cameraRequestIdRef.current !== requestId) {
+          mediaStream.getTracks().forEach((t) => t.stop());
+          return;
+        }
+        try {
+          await video.play();
+        } catch (playErr) {
+          console.warn('Video autoplay warning:', playErr);
+        }
+      }
+
+      if (cameraRequestIdRef.current === requestId) {
+        setCameraActive(true);
+      }
+    } catch (err: unknown) {
+      if (cameraRequestIdRef.current === requestId) {
+        console.warn('Camera access issue:', err);
+        setCameraError(getCameraErrorMessage(err));
+        setCameraActive(false);
+      }
+    } finally {
+      if (cameraRequestIdRef.current === requestId) {
+        setIsStartingCamera(false);
+      }
+    }
+  }, [facingMode, stopCamera]);
 
   useEffect(() => {
     startCamera();
     return () => {
       stopCamera();
     };
-  }, [facingMode]);
+  }, [startCamera, stopCamera]);
 
   const handleAddSign = useCallback((sign: RecognizedSign) => {
     setSignSequence((prev) => {
@@ -369,98 +486,111 @@ export const CameraStudioView: React.FC<CameraStudioViewProps> = ({
       const video = videoRef.current;
       const canvas = canvasRef.current;
 
-      if (video && canvas && video.readyState >= 2) {
+      if (
+        video &&
+        canvas &&
+        video.readyState >= 2 &&
+        video.videoWidth > 0 &&
+        video.videoHeight > 0 &&
+        !video.paused &&
+        !video.ended
+      ) {
         if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
-          canvas.width = video.videoWidth || 640;
-          canvas.height = video.videoHeight || 480;
+          canvas.width = video.videoWidth;
+          canvas.height = video.videoHeight;
         }
 
         const ctx = canvas.getContext('2d');
         if (ctx) {
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-
           if (video.currentTime !== lastVideoTime) {
             lastVideoTime = video.currentTime;
-            const nowMs = performance.now();
-            const drawingUtils = new DrawingUtils(ctx);
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Strictly monotonic integer timestamp prevents MediaPipe packet timestamp mismatch crashes
+            const nowMs = Math.max(
+              Math.round(performance.now()),
+              lastDetectTimestampRef.current + 1
+            );
+            lastDetectTimestampRef.current = nowMs;
+
+            if (!drawingUtilsCacheRef.current || drawingUtilsCacheRef.current.ctx !== ctx) {
+              drawingUtilsCacheRef.current = { ctx, utils: new DrawingUtils(ctx) };
+            }
+            const drawingUtils = drawingUtilsCacheRef.current.utils;
 
             const extractedHands: HandGeometryFeatures[] = [];
             let poseLandmarks: { x: number; y: number; z?: number }[] | undefined;
             let faceLandmarks: { x: number; y: number; z?: number }[] | undefined;
             let faceBlendshapes: any[] | undefined;
 
-            // A) Holistic pipeline
-            if (usingHolisticRef.current && holisticLandmarkerRef.current) {
+            const logThrottled = (scope: string, err: unknown) => {
+              if (nowMs - lastWarnAtRef.current > 5000) {
+                lastWarnAtRef.current = nowMs;
+                console.warn(`MediaPipe ${scope} frame warning:`, err);
+              }
+            };
+
+            // Run Pose & Face Landmarkers throttled (~140ms) to keep HandLandmarker fluid at full FPS
+            if (poseLandmarkerRef.current && nowMs - lastPoseInferAtRef.current >= 140) {
+              lastPoseInferAtRef.current = nowMs;
               try {
-                const hRes = holisticLandmarkerRef.current.detectForVideo(video, nowMs);
-                if (hRes.poseLandmarks?.length) {
-                  poseLandmarks = hRes.poseLandmarks[0];
+                const poseTs = Math.max(nowMs, lastPoseTsRef.current + 1);
+                lastPoseTsRef.current = poseTs;
+                const poseRes = poseLandmarkerRef.current.detectForVideo(video, poseTs);
+                if (poseRes.landmarks?.length) {
+                  lastPoseLandmarksRef.current = poseRes.landmarks[0];
                 }
-                if (hRes.faceLandmarks?.length) {
-                  faceLandmarks = hRes.faceLandmarks[0];
-                }
-                if (hRes.faceBlendshapes?.length) {
-                  faceBlendshapes = hRes.faceBlendshapes;
-                }
-                if (hRes.leftHandLandmarks?.length) {
-                  const lms = hRes.leftHandLandmarks[0];
-                  const world = hRes.leftHandWorldLandmarks?.[0];
-                  extractedHands.push(extractHandGeometry(lms, 'Left', world));
-                }
-                if (hRes.rightHandLandmarks?.length) {
-                  const lms = hRes.rightHandLandmarks[0];
-                  const world = hRes.rightHandWorldLandmarks?.[0];
-                  extractedHands.push(extractHandGeometry(lms, 'Right', world));
-                }
-              } catch {
-                // ignore occasional video timestamp race
+              } catch (err) {
+                logThrottled('Pose', err);
               }
-            } else {
-              // B) Separate Hand + Pose + Face Landmarkers pipeline
-              if (poseLandmarkerRef.current) {
-                try {
-                  const poseRes = poseLandmarkerRef.current.detectForVideo(video, nowMs);
-                  if (poseRes.landmarks?.length) {
-                    poseLandmarks = poseRes.landmarks[0];
-                  }
-                } catch {
-                  // ignore
+            }
+            poseLandmarks = lastPoseLandmarksRef.current;
+
+            if (faceLandmarkerRef.current && nowMs - lastFaceInferAtRef.current >= 140) {
+              lastFaceInferAtRef.current = nowMs;
+              try {
+                const faceTs = Math.max(nowMs, lastFaceTsRef.current + 1);
+                lastFaceTsRef.current = faceTs;
+                const faceRes = faceLandmarkerRef.current.detectForVideo(video, faceTs);
+                if (faceRes.faceLandmarks?.length) {
+                  lastFaceLandmarksRef.current = faceRes.faceLandmarks[0];
                 }
-              }
-
-              if (faceLandmarkerRef.current) {
-                try {
-                  const faceRes = faceLandmarkerRef.current.detectForVideo(video, nowMs);
-                  if (faceRes.faceLandmarks?.length) {
-                    faceLandmarks = faceRes.faceLandmarks[0];
-                  }
-                  if (faceRes.faceBlendshapes?.length) {
-                    faceBlendshapes = faceRes.faceBlendshapes;
-                  }
-                } catch {
-                  // ignore
+                if (faceRes.faceBlendshapes?.length) {
+                  lastFaceBlendshapesRef.current = faceRes.faceBlendshapes;
                 }
+              } catch (err) {
+                logThrottled('Face', err);
               }
+            }
+            faceLandmarks = lastFaceLandmarksRef.current;
+            faceBlendshapes = lastFaceBlendshapesRef.current;
 
-              if (handLandmarkerRef.current) {
-                try {
-                  const handRes = handLandmarkerRef.current.detectForVideo(video, nowMs);
-                  if (handRes.landmarks?.length) {
-                    for (let i = 0; i < handRes.landmarks.length; i++) {
-                      const rawCat = handRes.handedness?.[i]?.[0]?.categoryName;
-                      // In unmirrored video input, HandLandmarker labels reflect mirrored selfie convention
-                      let label: HandednessLabel = 'Unknown';
-                      if (rawCat === 'Left') label = isMirroredRef.current ? 'Right' : 'Left';
-                      if (rawCat === 'Right') label = isMirroredRef.current ? 'Left' : 'Right';
-
-                      extractedHands.push(
-                        extractHandGeometry(handRes.landmarks[i], label, handRes.worldLandmarks?.[i])
-                      );
+            if (handLandmarkerRef.current) {
+              try {
+                const handTs = Math.max(nowMs, lastHandTsRef.current + 1);
+                lastHandTsRef.current = handTs;
+                const handRes = handLandmarkerRef.current.detectForVideo(video, handTs);
+                if (handRes.landmarks?.length) {
+                  for (let i = 0; i < handRes.landmarks.length; i++) {
+                    const rawCat = handRes.handedness?.[i]?.[0]?.categoryName;
+                    // Raw video frames passed to MediaPipe are NOT CSS-mirrored;
+                    // on front camera ('user'), HandLandmarker's selfie convention swaps Left/Right.
+                    let label: HandednessLabel = 'Unknown';
+                    if (facingModeRef.current === 'user') {
+                      if (rawCat === 'Left') label = 'Right';
+                      if (rawCat === 'Right') label = 'Left';
+                    } else {
+                      if (rawCat === 'Left') label = 'Left';
+                      if (rawCat === 'Right') label = 'Right';
                     }
+
+                    extractedHands.push(
+                      extractHandGeometry(handRes.landmarks[i], label, handRes.worldLandmarks?.[i])
+                    );
                   }
-                } catch {
-                  // ignore
                 }
+              } catch (err) {
+                logThrottled('Hand', err);
               }
             }
 
@@ -485,7 +615,6 @@ export const CameraStudioView: React.FC<CameraStudioViewProps> = ({
             }
 
             if (poseLandmarks && poseLandmarks.length > 12) {
-              // Subtle shoulder anchor points only (clean camera)
               const anchors = [poseLandmarks[11], poseLandmarks[12]]
                 .filter(Boolean)
                 .map((p) => ({ x: p.x, y: p.y, z: p.z ?? 0, visibility: 1 }));
@@ -497,7 +626,7 @@ export const CameraStudioView: React.FC<CameraStudioViewProps> = ({
             }
 
             // Multimodal Feature Extraction & Temporal Buffer Update
-            if (isTranslating) {
+            if (isTranslating && trackingEngineMode !== 'loading' && trackingEngineMode !== 'error') {
               if (extractedHands.length > 0) {
                 const bodyCtx = extractBodyContext(poseLandmarks, extractedHands);
                 const faceCtx = extractFaceExpressions(faceLandmarks, faceBlendshapes);
@@ -528,7 +657,6 @@ export const CameraStudioView: React.FC<CameraStudioViewProps> = ({
                   handleAddSign(toRecognizedSign(holdStep.newlyConfirmedSign));
                 }
               } else {
-                // Tracking lost -> clear temporal sequence & reset Hold-to-Confirm immediately
                 temporalBufferRef.current.clear();
                 const noHandsEval: RecognitionEvaluation = {
                   status: 'no_hands',
@@ -562,7 +690,7 @@ export const CameraStudioView: React.FC<CameraStudioViewProps> = ({
         requestAnimationRef.current = null;
       }
     };
-  }, [cameraActive, isTranslating, handleAddSign]);
+  }, [cameraActive, isTranslating, trackingEngineMode, handleAddSign]);
 
   // Phrase output synthesis (explicitly separating isolated signs from contextual suggestions)
   const translationOutput = buildTranslationOutput(
@@ -601,10 +729,45 @@ export const CameraStudioView: React.FC<CameraStudioViewProps> = ({
   const handleCopy = () => {
     soundService.playTap();
     if (signSequence.length === 0) return;
-    navigator.clipboard.writeText(activeSpeechText).then(() => {
+    const markCopied = () => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
-    });
+    };
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(activeSpeechText).then(markCopied).catch(() => {
+        // Fallback when Clipboard API is blocked
+        const el = document.createElement('textarea');
+        el.value = activeSpeechText;
+        document.body.appendChild(el);
+        el.select();
+        try {
+          document.execCommand('copy');
+          markCopied();
+        } catch {
+          // ignore
+        }
+        document.body.removeChild(el);
+      });
+    }
+  };
+
+  const handleSaveToCloud = async () => {
+    if (!onSaveTranslation || signSequence.length === 0 || isSavingTranslation) return;
+    soundService.playCorrect();
+    setIsSavingTranslation(true);
+    try {
+      await onSaveTranslation(
+        signSequence.map((s) => s.gloss),
+        activeSpeechText,
+        evaluation.nmfDetected
+      );
+      setSavedNotice(true);
+      setTimeout(() => setSavedNotice(false), 2500);
+    } catch (err) {
+      console.error('Erro ao salvar tradução:', err);
+    } finally {
+      setIsSavingTranslation(false);
+    }
   };
 
   const handleManualPickSign = (sign: RecognizedSign) => {
@@ -640,22 +803,24 @@ export const CameraStudioView: React.FC<CameraStudioViewProps> = ({
         )}
 
         {/* Engine Status Indicator */}
-        <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-2xl bg-black/65 backdrop-blur-md border border-white/15 text-xs font-bold">
+        <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-black/65 backdrop-blur-md border border-white/15 text-xs font-bold">
           <span
             className={`w-2 h-2 rounded-full ${
               isModelLoading
-                ? 'bg-amber-400 animate-pulse'
+                ? 'bg-amber-400'
+                : trackingEngineMode === 'error'
+                ? 'bg-rose-500'
                 : cameraActive && isTranslating
-                ? 'bg-emerald-400 animate-pulse'
+                ? 'bg-emerald-400'
                 : 'bg-stone-500'
             }`}
           />
           <span className="text-stone-200">
             {isModelLoading
-              ? 'Carregando Holistic...'
-              : trackingEngineMode === 'holistic'
-              ? 'Holistic (Mãos+Corpo+Face)'
-              : 'Multimodal (Mãos+Corpo+Face)'}
+              ? 'Carregando modelo...'
+              : trackingEngineMode === 'error'
+              ? 'Erro no modelo'
+              : 'Visão Libras pronta'}
           </span>
         </div>
 
@@ -768,8 +933,25 @@ export const CameraStudioView: React.FC<CameraStudioViewProps> = ({
           }`}
         />
 
+        {/* Model Load Failure Banner with Retry */}
+        {modelError && (
+          <div className="absolute top-20 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 px-4 py-3 rounded-2xl bg-rose-950/95 border border-rose-500/60 backdrop-blur-xl shadow-2xl max-w-[92vw]">
+            <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-black text-rose-200">Erro ao carregar MediaPipe</p>
+              <p className="text-[11px] text-rose-300/90">{modelError}</p>
+            </div>
+            <button
+              onClick={() => setModelRetryNonce((n) => n + 1)}
+              className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-black text-xs cursor-pointer shrink-0"
+            >
+              Tentar novamente
+            </button>
+          </div>
+        )}
+
         {/* Recognized Sign Preview + Circular Hold-to-Confirm Ring */}
-        {isTranslating && evaluation.status === 'recognized' && evaluation.sign && (
+        {!modelError && isTranslating && evaluation.status === 'recognized' && evaluation.sign && (
           <div className="absolute top-20 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3 px-5 py-3 rounded-3xl bg-black/85 border-2 border-[#FF6B00] backdrop-blur-xl shadow-2xl animate-fade-in pointer-events-none max-w-[92vw]">
             <div className="relative w-11 h-11 flex items-center justify-center shrink-0">
               <svg className="w-full h-full -rotate-90" viewBox="0 0 36 36">
@@ -814,7 +996,7 @@ export const CameraStudioView: React.FC<CameraStudioViewProps> = ({
         )}
 
         {/* Below-Threshold Warning Pill (Never invents translation!) */}
-        {isTranslating && evaluation.status === 'below_threshold' && (
+        {!modelError && isTranslating && evaluation.status === 'below_threshold' && (
           <div className="absolute top-20 left-1/2 -translate-x-1/2 z-20 flex items-center gap-2.5 px-4 py-2.5 rounded-2xl bg-black/85 border border-amber-500/60 backdrop-blur-xl shadow-xl pointer-events-none max-w-[92vw]">
             <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0" />
             <div className="flex flex-col min-w-0">
@@ -831,49 +1013,57 @@ export const CameraStudioView: React.FC<CameraStudioViewProps> = ({
         {/* Inactive Camera / Permission Overlay */}
         {!cameraActive && (
           <div className="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-black/90 space-y-4 z-20">
-            <div className="w-20 h-20 rounded-3xl bg-[#FF6B00]/20 border-2 border-[#FF6B00]/40 flex items-center justify-center text-[#FF6B00] animate-pulse">
-              <Camera className="w-10 h-10" />
+            <div className="w-16 h-16 rounded-2xl bg-[#0D9488]/20 border border-[#0D9488]/40 flex items-center justify-center text-[#0D9488]">
+              <Camera className="w-8 h-8" />
             </div>
 
-            <div className="space-y-1 max-w-md">
-              <h2 className="text-xl sm:text-2xl font-black text-white">
-                Reconhecimento Multimodal de Libras
+            <div className="space-y-1.5 max-w-md">
+              <h2 className="font-display text-xl sm:text-2xl font-bold text-white">
+                Prática de Libras com Câmera
               </h2>
-              <p className="text-sm text-stone-300">
-                {cameraError ||
-                  'Ative a câmera para detectar sinais isolados com análise de mãos, corpo, expressão facial e movimento temporal.'}
+              <p className="text-sm text-stone-300 leading-relaxed">
+                {isStartingCamera
+                  ? 'Conectando à câmera...'
+                  : cameraError ||
+                    'Ative a câmera para fazer sinais e acompanhar a tradução em português.'}
               </p>
             </div>
 
             <button
               onClick={startCamera}
-              className="px-6 py-3.5 rounded-2xl bg-[#FF6B00] hover:bg-[#EA580C] text-white font-black text-sm uppercase tracking-wider border-b-4 border-[#9A3412] cursor-pointer shadow-xl transition-all active:translate-y-0.5"
+              disabled={isStartingCamera}
+              className="tactile-btn px-6 py-3.5 rounded-2xl bg-[#EA580C] hover:bg-[#DC4F06] disabled:opacity-60 text-white font-bold text-sm uppercase tracking-wider border-b-4 border-[#9A3412] cursor-pointer"
             >
-              Ligar Câmera e Iniciar
+              {isStartingCamera ? 'Iniciando...' : cameraError ? 'Tentar novamente' : 'Ligar câmera'}
             </button>
           </div>
         )}
       </div>
 
       {/* 3. DEDICATED TRANSLATION & CORRECTION CONSOLE */}
-      <footer className="w-full z-40 bg-[#141210]/95 backdrop-blur-2xl border-t-2 border-white/10 px-4 py-3.5 sm:px-6 sm:py-4 flex flex-col gap-2.5 shadow-2xl">
+      <footer className="w-full z-40 bg-[#141210]/95 backdrop-blur-2xl border-t border-white/10 px-4 py-3.5 sm:px-6 sm:py-4 flex flex-col gap-2.5">
         {/* Top bar */}
         <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-[#FF6B00]" />
-            <h3 className="text-xs sm:text-sm font-black uppercase tracking-wider text-white">
-              Sinais Reconhecidos → Português
+            <Languages className="w-4 h-4 text-[#0D9488]" />
+            <h3 className="text-xs sm:text-sm font-bold uppercase tracking-wider text-white">
+              Tradução para Português
             </h3>
-            <span className="text-[10px] font-bold bg-white/10 text-stone-300 px-2 py-0.5 rounded-full">
-              Sinais Isolados
-            </span>
           </div>
 
           <div className="flex items-center gap-2">
             <button
               onClick={() => {
                 soundService.playTap();
-                setIsTranslating((prev) => !prev);
+                setIsTranslating((prev) => {
+                  const next = !prev;
+                  if (!next) {
+                    temporalBufferRef.current.clear();
+                    holdStateRef.current = createInitialHoldState();
+                    setHoldProgress(0);
+                  }
+                  return next;
+                });
               }}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 text-stone-300 font-bold text-xs cursor-pointer transition-all active:scale-95"
             >
@@ -972,7 +1162,7 @@ export const CameraStudioView: React.FC<CameraStudioViewProps> = ({
             </p>
           </div>
 
-          {/* Action buttons: Speak, Copy, Undo Last, Clear */}
+          {/* Action buttons: Speak, Copy, Save, Undo Last, Clear */}
           <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-center">
             <button
               onClick={handleSpeak}
@@ -983,6 +1173,18 @@ export const CameraStudioView: React.FC<CameraStudioViewProps> = ({
               <Volume2 className="w-4 h-4" />
               <span className="hidden sm:inline">Ouvir</span>
             </button>
+
+            {isAuthenticated && onSaveTranslation && (
+              <button
+                onClick={handleSaveToCloud}
+                disabled={signSequence.length === 0 || isSavingTranslation}
+                title="Salvar tradução na sua conta"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-600/80 hover:bg-emerald-600 text-white font-black text-xs cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-95"
+              >
+                {savedNotice ? <Check className="w-4 h-4" /> : <BookmarkPlus className="w-4 h-4" />}
+                <span className="hidden sm:inline">{savedNotice ? 'Salvo!' : 'Salvar'}</span>
+              </button>
+            )}
 
             <button
               onClick={handleCopy}
@@ -1065,3 +1267,4 @@ export const CameraStudioView: React.FC<CameraStudioViewProps> = ({
     </div>
   );
 };
+

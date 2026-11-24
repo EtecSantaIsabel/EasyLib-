@@ -1,0 +1,444 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Global Safety Net (Default Deny)
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Hardened Global Primitives
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidRoomCode(code) {
+      return code is string && code.size() >= 6 && code.size() <= 12 && code.matches('^[A-Z0-9]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedCaller() {
+      return isSignedIn() && (
+        request.auth.token.email_verified == true
+        || (request.auth.token.firebase.sign_in_provider == 'phone' && request.auth.token.phone_number != null)
+        || request.auth.token.firebase.sign_in_provider == 'apple.com'
+      );
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isBoundedStringList(arr, maxItems, maxItemLen) {
+      return arr is list
+        && arr.size() <= maxItems
+        && (arr.size() == 0 || (arr[0] is string && arr[0].size() <= maxItemLen));
+    }
+
+    function isValidTrack(track) {
+      return track is string && track in ['iniciante', 'intermediario', 'avancado', 'gramatica_nmf'];
+    }
+
+    function isValidLeague(league) {
+      return league is string && league in [
+        'Bronze',
+        'Prata',
+        'Ouro',
+        'Safira',
+        'Rubi',
+        'Esmeralda',
+        'Ametista',
+        'Pérola',
+        'Obsidiana',
+        'Diamante'
+      ];
+    }
+
+    // 3. Entity Validation Blueprints (No existing() / diff() inside)
+    function isValidUserProfile(data) {
+      return data.keys().hasAll([
+        'uid',
+        'email',
+        'name',
+        'username',
+        'avatar',
+        'selectedTrack',
+        'xp',
+        'gems',
+        'hearts',
+        'maxHearts',
+        'streakDays',
+        'hasActiveStreakFreeze',
+        'streakFreezeCount',
+        'isSuperDuolingo',
+        'completedNodeIds',
+        'learnedSignIds',
+        'favoriteSignIds',
+        'currentLeague',
+        'duoOutfit',
+        'unlockedOutfits',
+        'wagerActive',
+        'wagerDaysLeft',
+        'claimedQuestIds',
+        'createdAt',
+        'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'uid',
+        'email',
+        'name',
+        'username',
+        'avatar',
+        'selectedTrack',
+        'xp',
+        'gems',
+        'hearts',
+        'maxHearts',
+        'streakDays',
+        'hasActiveStreakFreeze',
+        'streakFreezeCount',
+        'isSuperDuolingo',
+        'completedNodeIds',
+        'learnedSignIds',
+        'favoriteSignIds',
+        'currentLeague',
+        'duoOutfit',
+        'unlockedOutfits',
+        'wagerActive',
+        'wagerDaysLeft',
+        'claimedQuestIds',
+        'createdAt',
+        'updatedAt'
+      ])
+      && data.uid is string && data.uid.size() >= 1 && data.uid.size() <= 128 && data.uid == request.auth.uid
+      && data.email is string && data.email.size() >= 3 && data.email.size() <= 254
+      && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
+      && data.username is string && data.username.size() >= 1 && data.username.size() <= 40
+      && data.avatar is string && data.avatar.size() >= 1 && data.avatar.size() <= 16
+      && isValidTrack(data.selectedTrack)
+      && data.xp is number && data.xp >= 0 && data.xp <= 10000000
+      && data.gems is number && data.gems >= 0 && data.gems <= 10000000
+      && data.hearts is number && data.hearts >= 0 && data.hearts <= 20
+      && data.maxHearts is number && data.maxHearts >= 1 && data.maxHearts <= 20
+      && data.streakDays is number && data.streakDays >= 0 && data.streakDays <= 36500
+      && data.hasActiveStreakFreeze is bool
+      && data.streakFreezeCount is number && data.streakFreezeCount >= 0 && data.streakFreezeCount <= 100
+      && data.isSuperDuolingo is bool
+      && isBoundedStringList(data.completedNodeIds, 3000, 80)
+      && isBoundedStringList(data.learnedSignIds, 500, 80)
+      && isBoundedStringList(data.favoriteSignIds, 500, 80)
+      && isValidLeague(data.currentLeague)
+      && data.duoOutfit is string && data.duoOutfit.size() >= 1 && data.duoOutfit.size() <= 40
+      && isBoundedStringList(data.unlockedOutfits, 50, 40)
+      && data.wagerActive is bool
+      && data.wagerDaysLeft is number && data.wagerDaysLeft >= 0 && data.wagerDaysLeft <= 30
+      && isBoundedStringList(data.claimedQuestIds, 50, 80)
+      && data.createdAt is timestamp
+      && data.updatedAt is timestamp;
+    }
+
+    function isValidLeaderboardEntry(data) {
+      return data.keys().hasAll([
+        'userId',
+        'name',
+        'username',
+        'avatar',
+        'xp',
+        'streakDays',
+        'currentLeague',
+        'isPublic',
+        'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'userId',
+        'name',
+        'username',
+        'avatar',
+        'xp',
+        'streakDays',
+        'currentLeague',
+        'isPublic',
+        'updatedAt'
+      ])
+      && data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128 && data.userId == request.auth.uid
+      && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
+      && data.username is string && data.username.size() >= 1 && data.username.size() <= 40
+      && data.avatar is string && data.avatar.size() >= 1 && data.avatar.size() <= 16
+      && data.xp is number && data.xp >= 0 && data.xp <= 10000000
+      && data.streakDays is number && data.streakDays >= 0 && data.streakDays <= 36500
+      && isValidLeague(data.currentLeague)
+      && data.isPublic is bool
+      && data.updatedAt is timestamp;
+    }
+
+    function isValidSavedTranslation(data, userId) {
+      return data.keys().hasAll(['userId', 'glosses', 'portugueseText', 'nmfExpression', 'createdAt'])
+      && data.keys().hasOnly(['userId', 'glosses', 'portugueseText', 'nmfExpression', 'createdAt'])
+      && data.userId is string && data.userId == userId && data.userId == request.auth.uid
+      && data.glosses is list && data.glosses.size() >= 1 && data.glosses.size() <= 30
+      && data.glosses[0] is string && data.glosses[0].size() >= 1 && data.glosses[0].size() <= 64
+      && data.portugueseText is string && data.portugueseText.size() >= 1 && data.portugueseText.size() <= 500
+      && data.nmfExpression is string && data.nmfExpression.size() >= 1 && data.nmfExpression.size() <= 64
+      && data.createdAt is timestamp;
+    }
+
+    function isValidRoom(data, roomCode) {
+      return data.keys().hasAll(['roomCode', 'name', 'ownerUid', 'createdAt', 'updatedAt'])
+      && data.keys().hasOnly(['roomCode', 'name', 'ownerUid', 'createdAt', 'updatedAt'])
+      && data.roomCode is string && data.roomCode == roomCode && isValidRoomCode(data.roomCode)
+      && data.name is string && data.name.size() >= 2 && data.name.size() <= 60
+      && data.ownerUid is string && data.ownerUid.size() >= 1 && data.ownerUid.size() <= 128 && data.ownerUid == request.auth.uid
+      && data.createdAt is timestamp
+      && data.updatedAt is timestamp;
+    }
+
+    function isValidRoomMember(data, roomCode, userId) {
+      return data.keys().hasAll([
+        'roomCode',
+        'userId',
+        'name',
+        'username',
+        'avatar',
+        'xp',
+        'streakDays',
+        'currentLeague',
+        'joinedAt',
+        'updatedAt'
+      ])
+      && data.keys().hasOnly([
+        'roomCode',
+        'userId',
+        'name',
+        'username',
+        'avatar',
+        'xp',
+        'streakDays',
+        'currentLeague',
+        'joinedAt',
+        'updatedAt'
+      ])
+      && data.roomCode is string && data.roomCode == roomCode && isValidRoomCode(data.roomCode)
+      && data.userId is string && data.userId == userId && data.userId == request.auth.uid
+      && data.name is string && data.name.size() >= 1 && data.name.size() <= 80
+      && data.username is string && data.username.size() >= 1 && data.username.size() <= 40
+      && data.avatar is string && data.avatar.size() >= 1 && data.avatar.size() <= 16
+      && data.xp is number && data.xp >= 0 && data.xp <= 10000000
+      && data.streakDays is number && data.streakDays >= 0 && data.streakDays <= 36500
+      && isValidLeague(data.currentLeague)
+      && data.joinedAt is timestamp
+      && data.updatedAt is timestamp;
+    }
+
+    // Master Gate helper for /users/{userId} subcollections
+    function isUserParentOwner(userId) {
+      return isSignedIn()
+        && isOwner(userId)
+        && exists(/databases/$(database)/documents/users/$(userId))
+        && get(/databases/$(database)/documents/users/$(userId)).data.uid == request.auth.uid;
+    }
+
+    // Master Gate helpers for /rooms/{roomCode}
+    function roomExists(roomCode) {
+      return exists(/databases/$(database)/documents/rooms/$(roomCode));
+    }
+
+    function isRoomMember(roomCode) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/rooms/$(roomCode)/members/$(request.auth.uid));
+    }
+
+    // 4. Private User Profiles (Contains PII - Strictly Owner-Only, No Listing)
+    match /users/{userId} {
+      allow get: if isSignedIn() && isValidId(userId) && isOwner(userId);
+      allow list: if false;
+
+      allow create: if isVerifiedCaller()
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming())
+        && (request.auth.token.email == null || incoming().email == request.auth.token.email)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedCaller()
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidUserProfile(incoming())
+        && incoming().uid == existing().uid
+        && incoming().email == existing().email
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          // Action: Update Learner Progress & Profile Settings
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'name',
+            'username',
+            'avatar',
+            'selectedTrack',
+            'xp',
+            'gems',
+            'hearts',
+            'maxHearts',
+            'streakDays',
+            'hasActiveStreakFreeze',
+            'streakFreezeCount',
+            'isSuperDuolingo',
+            'completedNodeIds',
+            'learnedSignIds',
+            'favoriteSignIds',
+            'currentLeague',
+            'duoOutfit',
+            'unlockedOutfits',
+            'wagerActive',
+            'wagerDaysLeft',
+            'claimedQuestIds',
+            'updatedAt'
+          ])
+        );
+
+      allow delete: if isVerifiedCaller() && isValidId(userId) && isOwner(userId);
+
+      // 5. Saved Libras Camera Translations (Subcollection with Master Gate)
+      match /translations/{translationId} {
+        allow get: if isSignedIn()
+          && isValidId(userId)
+          && isValidId(translationId)
+          && isUserParentOwner(userId);
+
+        allow list: if isSignedIn() && isOwner(userId) && resource.data.userId == request.auth.uid;
+
+        allow create: if isVerifiedCaller()
+          && isValidId(userId)
+          && isValidId(translationId)
+          && isOwner(userId)
+          && isValidSavedTranslation(incoming(), userId)
+          && isUserParentOwner(userId)
+          && incoming().createdAt == request.time;
+
+        allow update: if false;
+
+        allow delete: if isVerifiedCaller()
+          && isValidId(userId)
+          && isValidId(translationId)
+          && isOwner(userId);
+      }
+    }
+
+    // 6. Public Non-PII Leaderboard Entries (Split Collection Strategy)
+    match /leaderboard/{userId} {
+      allow get: if isSignedIn()
+        && isValidId(userId)
+        && existing().isPublic == true;
+
+      allow list: if isSignedIn() && resource.data.isPublic == true;
+
+      allow create: if isVerifiedCaller()
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidLeaderboardEntry(incoming())
+        && incoming().isPublic == true
+        && incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedCaller()
+        && isValidId(userId)
+        && isOwner(userId)
+        && isValidLeaderboardEntry(incoming())
+        && incoming().userId == existing().userId
+        && incoming().updatedAt == request.time
+        && (
+          // Action: Sync Ranking Progress
+          incoming().diff(existing()).affectedKeys().hasOnly([
+            'name',
+            'username',
+            'avatar',
+            'xp',
+            'streakDays',
+            'currentLeague',
+            'isPublic',
+            'updatedAt'
+          ])
+        );
+
+      allow delete: if isVerifiedCaller() && isValidId(userId) && isOwner(userId);
+    }
+
+    // 7. Closed Ranking Rooms (Unique Code Lookup Only, Listing Strictly Forbidden)
+    match /rooms/{roomCode} {
+      allow get: if isSignedIn() && isValidRoomCode(roomCode);
+      allow list: if false;
+
+      allow create: if isVerifiedCaller()
+        && isValidRoomCode(roomCode)
+        && isValidRoom(incoming(), roomCode)
+        && incoming().ownerUid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      allow update: if false;
+
+      allow delete: if isVerifiedCaller()
+        && isValidRoomCode(roomCode)
+        && existing().ownerUid == request.auth.uid;
+
+      // 8. Closed Room Members (Master Gate enforces real existing room)
+      match /members/{userId} {
+        allow get: if isSignedIn()
+          && isValidRoomCode(roomCode)
+          && isValidId(userId)
+          && roomExists(roomCode)
+          && (isOwner(userId) || isRoomMember(roomCode));
+
+        allow list: if isSignedIn()
+          && resource.data.roomCode == roomCode;
+
+        allow create: if isVerifiedCaller()
+          && isValidRoomCode(roomCode)
+          && isValidId(userId)
+          && isOwner(userId)
+          && roomExists(roomCode)
+          && isValidRoomMember(incoming(), roomCode, userId)
+          && incoming().joinedAt == request.time
+          && incoming().updatedAt == request.time;
+
+        allow update: if isVerifiedCaller()
+          && isValidRoomCode(roomCode)
+          && isValidId(userId)
+          && isOwner(userId)
+          && roomExists(roomCode)
+          && isValidRoomMember(incoming(), roomCode, userId)
+          && incoming().roomCode == existing().roomCode
+          && incoming().userId == existing().userId
+          && incoming().joinedAt == existing().joinedAt
+          && incoming().updatedAt == request.time
+          && (
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'name',
+              'username',
+              'avatar',
+              'xp',
+              'streakDays',
+              'currentLeague',
+              'updatedAt'
+            ])
+          );
+
+        allow delete: if isVerifiedCaller()
+          && isValidRoomCode(roomCode)
+          && isValidId(userId)
+          && isOwner(userId);
+      }
+    }
+  }
+}
